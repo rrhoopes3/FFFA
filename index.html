@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cat Clans Auto-Battler</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #111;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      /* Custom background implementation from original file */
+      background-image:
+        radial-gradient(circle at 10% 20%, rgba(255, 0, 0, 0.05) 0%, transparent 20%),
+        radial-gradient(circle at 90% 80%, rgba(0, 0, 255, 0.05) 0%, transparent 20%),
+        radial-gradient(circle at 50% 50%, rgba(0, 255, 0, 0.05) 0%, transparent 20%),
+        radial-gradient(circle at 30% 70%, rgba(255, 255, 0, 0.05) 0%, transparent 20%),
+        radial-gradient(circle at 70% 30%, rgba(255, 0, 255, 0.05) 0%, transparent 20%),
+        radial-gradient(circle at 80% 20%, rgba(0, 255, 255, 0.05) 0%, transparent 20%),
+        radial-gradient(circle at 20% 80%, rgba(255, 128, 0, 0.05) 0%, transparent 20%),
+        radial-gradient(circle at 60% 60%, rgba(128, 0, 255, 0.05) 0%, transparent 20%),
+        radial-gradient(circle at 40% 40%, rgba(0, 128, 255, 0.05) 0%, transparent 20%);
+      background-size: 100% 100%;
+      background-attachment: fixed;
+      animation: backgroundMove 30s linear infinite;
+    }
+
+    @keyframes backgroundMove {
+      0% { background-position: 0% 0%; }
+      100% { background-position: 100% 100%; }
+    }
+
+    #ui {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      font-size: 18px;
+      font-weight: bold;
+      justify-content: center;
+    }
+    button {
+      background: #444;
+      color: #fff;
+      border: 2px solid #666;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover { background: #555; border-color: #888; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #shop { display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; }
+    .unit {
+      background: linear-gradient(145deg, #333, #555);
+      border: 2px solid #777;
+      border-radius: 10px;
+      padding: 15px;
+      width: 130px;
+      height: 150px;
+      text-align: center;
+      cursor: grab;
+      user-select: none;
+      transition: transform 0.2s;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+    }
+    .unit:hover { transform: scale(1.05); }
+    .unit:active { cursor: grabbing; }
+    .unit-icon { font-size: 48px; margin: 10px 0; }
+    .unit-name { font-size: 14px; margin: 5px 0; }
+    .unit-cost { font-size: 16px; font-weight: bold; color: #ffd700; }
+    .unit-faction { font-size: 12px; color: #aaa; }
+    #game-container { display: flex; gap: 20px; justify-content: center; align-items: flex-start; }
+    #synergies-panel {
+      width: 200px;
+      background: rgba(0,0,0,0.6);
+      border: 2px solid #444;
+      border-radius: 10px;
+      padding: 15px;
+    }
+    #synergies-panel h3 { margin: 0 0 10px 0; font-size: 16px; text-align: center; color: #ffd700; }
+    .synergy-item { display: flex; align-items: center; gap: 8px; padding: 8px; margin: 5px 0; border-radius: 5px; background: rgba(255,255,255,0.05); }
+    .synergy-item.active { background: rgba(255,215,0,0.2); border: 1px solid rgba(255,215,0,0.5); }
+    .synergy-item.inactive { opacity: 0.5; }
+    .synergy-icon { font-size: 20px; }
+    .synergy-info { flex: 1; }
+    .synergy-name { font-size: 12px; font-weight: bold; }
+    .synergy-count { font-size: 11px; color: #aaa; }
+    .synergy-bonus { font-size: 10px; color: #4f4; margin-top: 2px; }
+    .threshold { display: inline-block; padding: 1px 4px; margin: 1px; border-radius: 3px; font-size: 10px; }
+    .threshold.active { background: #ffd700; color: #000; }
+    .threshold.inactive { background: #333; color: #666; }
+
+    /* ═══════════════════════════════════════════════════
+       AUTH & USER PROFILE STYLES
+       ═══════════════════════════════════════════════════ */
+
+    /* Top-right user area */
+    #user-area {
+      position: fixed;
+      top: 15px;
+      right: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 1000;
+    }
+
+    #user-profile {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(0,0,0,0.7);
+      padding: 8px 15px;
+      border-radius: 25px;
+      border: 2px solid #444;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #user-profile:hover {
+      border-color: #ffd700;
+      background: rgba(0,0,0,0.85);
+    }
+
+    #user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      border: 2px solid #ffd700;
+    }
+    #user-avatar img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    #user-info {
+      text-align: left;
+    }
+    #user-name {
+      font-weight: bold;
+      font-size: 14px;
+      color: #fff;
+    }
+    #user-currency {
+      font-size: 11px;
+      color: #aaa;
+    }
+    #user-currency span { margin-right: 8px; }
+    .coins { color: #ffd700; }
+    .gems { color: #a855f7; }
+
+    /* Login button */
+    #login-btn {
+      background: linear-gradient(135deg, #5865F2, #7289DA);
+      border: none;
+      padding: 10px 20px;
+      border-radius: 20px;
+      color: #fff;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #login-btn:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 15px rgba(88, 101, 242, 0.4);
+    }
+
+    /* Auth Modal */
+    #auth-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.85);
+      z-index: 2000;
+      justify-content: center;
+      align-items: center;
+    }
+    #auth-modal.active { display: flex; }
+
+    .auth-container {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border: 2px solid #4a4a6a;
+      border-radius: 20px;
+      padding: 40px;
+      width: 400px;
+      max-width: 90%;
+      text-align: center;
+      position: relative;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+
+    .auth-close {
+      position: absolute;
+      top: 15px;
+      right: 20px;
+      font-size: 28px;
+      cursor: pointer;
+      color: #888;
+      transition: color 0.2s;
+    }
+    .auth-close:hover { color: #fff; }
+
+    .auth-logo {
+      font-size: 60px;
+      margin-bottom: 10px;
+    }
+
+    .auth-title {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #ffd700;
+    }
+
+    .auth-subtitle {
+      color: #aaa;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    /* OAuth Buttons */
+    .oauth-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      padding: 14px 20px;
+      margin: 10px 0;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .oauth-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+    }
+
+    .oauth-discord {
+      background: #5865F2;
+      color: #fff;
+    }
+    .oauth-google {
+      background: #fff;
+      color: #333;
+      border: 2px solid #ddd;
+    }
+
+    .oauth-divider {
+      display: flex;
+      align-items: center;
+      margin: 25px 0;
+      color: #666;
+    }
+    .oauth-divider::before,
+    .oauth-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #444;
+    }
+    .oauth-divider span {
+      padding: 0 15px;
+      font-size: 12px;
+    }
+
+    /* Email Form */
+    .auth-form input {
+      width: 100%;
+      padding: 14px 15px;
+      margin: 8px 0;
+      border: 2px solid #333;
+      border-radius: 10px;
+      background: #0a0a15;
+      color: #fff;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .auth-form input:focus {
+      outline: none;
+      border-color: #5865F2;
+    }
+    .auth-form input::placeholder {
+      color: #666;
+    }
+
+    .auth-submit {
+      width: 100%;
+      padding: 14px;
+      margin-top: 15px;
+      background: linear-gradient(135deg, #ffd700, #ffaa00);
+      border: none;
+      border-radius: 10px;
+      color: #000;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .auth-submit:hover {
+      transform: scale(1.02);
+      box-shadow: 0 5px 20px rgba(255, 215, 0, 0.3);
+    }
+
+    .auth-switch {
+      margin-top: 20px;
+      color: #888;
+      font-size: 14px;
+    }
+    .auth-switch a {
+      color: #5865F2;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .auth-switch a:hover {
+      text-decoration: underline;
+    }
+
+    .auth-error {
+      background: rgba(255, 50, 50, 0.2);
+      border: 1px solid #f44;
+      color: #f88;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 15px;
+      font-size: 13px;
+      display: none;
+    }
+    .auth-error.show { display: block; }
+
+    /* User dropdown menu */
+    #user-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 10px;
+      background: rgba(20, 20, 35, 0.95);
+      border: 2px solid #444;
+      border-radius: 12px;
+      min-width: 200px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+      overflow: hidden;
+    }
+    #user-dropdown.show { display: block; }
+
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 15px;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .dropdown-item:hover {
+      background: rgba(255,255,255,0.1);
+    }
+    .dropdown-item.danger { color: #f44; }
+    .dropdown-divider {
+      height: 1px;
+      background: #333;
+      margin: 5px 0;
+    }
+
+    #board {
+      border: 3px solid #444;
+      border-radius: 10px;
+      background: #000;
+      display: block;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.8);
+      pointer-events: all;
+    }
+    #combatLog {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      width: 300px;
+      height: 200px;
+      background: rgba(0,0,0,0.8);
+      padding: 10px;
+      overflow-y: auto;
+      font-size: 12px;
+      display: none;
+      border: 1px solid #666;
+      border-radius: 5px;
+    }
+
+    /* Floating damage numbers */
+    .damage-number {
+      position: absolute;
+      pointer-events: none;
+      font-weight: bold;
+      font-size: 20px;
+      color: #fff;
+      text-shadow: 0 0 6px #000, 0 0 12px #f44;
+      z-index: 100;
+      animation: floatUp 1.2s ease-out forwards;
+    }
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-80px); }
+    }
+
+    /* Bench */
+    #bench-container {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      padding: 15px;
+      background: linear-gradient(180deg, #1a1a2e, #0d0d1a);
+      border: 2px solid #333;
+      border-radius: 10px;
+      margin: 0 auto;
+      max-width: 900px;
+    }
+    .bench-slot {
+      width: 70px;
+      height: 70px;
+      background: rgba(255,255,255,0.05);
+      border: 2px dashed #444;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+    }
+    .bench-slot.occupied { border-style: solid; cursor: grab; }
+    .bench-unit { font-size: 36px; }
+    .bench-unit-stars {
+      position: absolute;
+      bottom: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: #ffd700;
+    }
+
+    /* Sell zone */
+    #sell-zone {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 15px 40px;
+      background: rgba(255,50,50,0.2);
+      border: 2px dashed #f44;
+      border-radius: 10px;
+      color: #f88;
+      font-weight: bold;
+      font-size: 14px;
+      display: none;
+      z-index: 100;
+    }
+    #sell-zone.active { display: block; }
+
+    /* Star display on board */
+    .star-indicator {
+      position: absolute;
+      bottom: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: #ffd700;
+      text-shadow: 0 0 4px #000;
+    }
+
+    /* Unit Tooltip */
+    #unit-tooltip {
+      position: fixed;
+      display: none;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border: 2px solid #4a4a6a;
+      border-radius: 12px;
+      padding: 0;
+      min-width: 260px;
+      max-width: 300px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 20px rgba(100,100,255,0.2);
+      z-index: 1000;
+      pointer-events: none;
+      font-size: 13px;
+    }
+    .tooltip-header {
+      background: linear-gradient(90deg, #2a2a4a, #3a3a5a);
+      padding: 12px 15px;
+      border-radius: 10px 10px 0 0;
+      border-bottom: 1px solid #4a4a6a;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .tooltip-icon {
+      font-size: 36px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    .tooltip-title {
+      flex: 1;
+    }
+    .tooltip-name {
+      font-size: 16px;
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 3px;
+    }
+    .tooltip-faction {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      display: inline-block;
+    }
+    .tooltip-cost {
+      background: linear-gradient(135deg, #ffd700, #ffaa00);
+      color: #000;
+      font-weight: bold;
+      font-size: 18px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(255,215,0,0.4);
+    }
+    .tooltip-body {
+      padding: 12px 15px;
+    }
+    .tooltip-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .tooltip-stat {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+    }
+    .tooltip-stat-value {
+      font-weight: bold;
+      color: #ffd700;
+    }
+    .tooltip-ability {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    .tooltip-ability-name {
+      font-weight: bold;
+      color: #ffd700;
+      font-size: 13px;
+    }
+    .tooltip-ability-desc {
+      font-size: 11px;
+      color: #ccc;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════
+       USER AREA (Top Right)
+       ═══════════════════════════════════════════════════ -->
+  <div id="user-area">
+    <!-- Shown when logged out -->
+    <button id="login-btn" onclick="openAuthModal()">
+      <span>🐱</span> Sign In
+    </button>
+
+    <!-- Shown when logged in -->
+    <div id="user-profile" style="display: none;" onclick="toggleUserDropdown()">
+      <div id="user-avatar">🐱</div>
+      <div id="user-info">
+        <div id="user-name">Player</div>
+        <div id="user-currency">
+          <span class="coins">🪙 0</span>
+          <span class="gems">💎 0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dropdown Menu -->
+    <div id="user-dropdown">
+      <div class="dropdown-item" onclick="openProfile()">
+        <span>👤</span> Profile
+      </div>
+      <div class="dropdown-item" onclick="openCosmetics()">
+        <span>🎨</span> Cosmetics
+      </div>
+      <div class="dropdown-item" onclick="openStats()">
+        <span>📊</span> Stats
+      </div>
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item danger" onclick="logout()">
+        <span>🚪</span> Logout
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════
+       AUTH MODAL
+       ═══════════════════════════════════════════════════ -->
+  <div id="auth-modal">
+    <div class="auth-container">
+      <span class="auth-close" onclick="closeAuthModal()">&times;</span>
+
+      <div class="auth-logo">🐱</div>
+      <div class="auth-title">Cat Clans</div>
+      <div class="auth-subtitle" id="auth-subtitle">Sign in to save your progress</div>
+
+      <div class="auth-error" id="auth-error"></div>
+
+      <!-- OAuth Buttons -->
+      <button class="oauth-btn oauth-discord" onclick="loginWithDiscord()">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+        </svg>
+        Continue with Discord
+      </button>
+
+      <button class="oauth-btn oauth-google" onclick="loginWithGoogle()">
+        <svg width="24" height="24" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Continue with Google
+      </button>
+
+      <div class="oauth-divider"><span>or</span></div>
+
+      <!-- Email/Password Form -->
+      <form class="auth-form" id="auth-form" onsubmit="handleAuthSubmit(event)">
+        <input type="text" id="auth-username" placeholder="Username" style="display: none;">
+        <input type="email" id="auth-email" placeholder="Email" required>
+        <input type="password" id="auth-password" placeholder="Password" required>
+        <button type="submit" class="auth-submit" id="auth-submit-btn">Sign In</button>
+      </form>
+
+      <div class="auth-switch">
+        <span id="auth-switch-text">Don't have an account?</span>
+        <a onclick="toggleAuthMode()"><span id="auth-switch-link">Sign Up</span></a>
+      </div>
+    </div>
+  </div>
+
+  <div id="ui">
+    <span>Round: <span id="round">1</span></span>
+    <span>Gold: <span id="gold">50</span></span>
+    <span>Health: <span id="health">100</span></span>
+    <span>Level: <span id="level">1</span></span>
+    <span>Units: <span id="unitcap">0/3</span></span>
+    <button id="fight">FIGHT!</button>
+    <button id="reroll">REROLL (2g)</button>
+    <button id="levelup">LEVEL UP (4g)</button>
+  </div>
+
+  <div id="shop"></div>
+
+  <div id="game-container">
+    <div id="synergies-panel">
+      <h3>🐱 CAT CLANS</h3>
+      <div id="synergies-list"></div>
+    </div>
+    <canvas id="board" width="1200" height="900"></canvas>
+  </div>
+
+  <div id="bench-container">
+    <!-- 9 bench slots -->
+  </div>
+
+  <div id="sell-zone">🗑️ SELL UNIT</div>
+  <div id="combatLog"></div>
+
+  <!-- Unit Tooltip -->
+  <div id="unit-tooltip">
+    <div class="tooltip-header">
+      <div class="tooltip-icon">🐈</div>
+      <div class="tooltip-title">
+        <div class="tooltip-name">Unit Name</div>
+        <div class="tooltip-faction">Faction</div>
+      </div>
+      <div class="tooltip-cost">1</div>
+    </div>
+    <div class="tooltip-body">
+      <div class="tooltip-stats">
+        <div class="tooltip-stat">
+          <span>HP:</span>
+          <span class="tooltip-stat-value">0</span>
+        </div>
+        <div class="tooltip-stat">
+          <span>ATK:</span>
+          <span class="tooltip-stat-value">0</span>
+        </div>
+        <div class="tooltip-stat">
+          <span>SPD:</span>
+          <span class="tooltip-stat-value">0</span>
+        </div>
+        <div class="tooltip-stat">
+          <span>Range:</span>
+          <span class="tooltip-stat-value">0</span>
+        </div>
+      </div>
+      <div class="tooltip-ability">
+        <div class="tooltip-ability-name">Ability Name</div>
+        <div class="tooltip-ability-desc">Ability description</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ────────────────────────────────────────────────
+    //  CONFIG & STATE
+    // ────────────────────────────────────────────────
+
+    let gold = 50;
+    let health = 100;
+    let playerLevel = 1;
+    let currentRound = 1;
+    let combatState = 'idle'; // idle / combat
+    let shopUnits = [];
+    let playerBoard = {};     // { "3,5": {id:"alley_tabby_thug", stars:1} }
+    let bench = Array(9).fill(null);
+    let combatUnits = [];
+    let preCombatBoard = {};
+    let enemyBoard = {};
+    let activeCombatSynergies = {};
+    let visualEffects = [];
+    let combatLog = [];
+    let roundBanner = null;
+    let streak = 0;           // positive = win streak, negative = loss streak
+    let dragStart = null;
+    let dragUnit = null;
+    let sellZoneActive = false;
+    let unitImages = {};
+    let unitImageMap = {};
+
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+
+    // Hex grid settings (7 rows, offset columns)
+    const HEX_SIZE = 50;
+    const boardHexes = [];
+    for (let row = 0; row < 7; row++) {
+      for (let col = 0; col < (row % 2 === 0 ? 9 : 8); col++) {
+        boardHexes.push({ col, row });
+      }
+    }
+
+    // ────────────────────────────────────────────────
+    //  UNIT DATA (completed Bengal + basic others)
+    // ────────────────────────────────────────────────
+
+    const unitsData = {
+      // Alley Cats
+      'alley_tabby_thug': { name: 'Tabby Thug', faction: 'Alley', cost: 1, color: '#A0AEC1', icon: '🐈‍⬛',
+        stats: {hp: 550, attack: 45, speed: 0.9, range: 1},
+        ability: {name: 'Dumpster Dive', trigger: 'passive', effect: {gold_on_kill: 1}} },
+      'alley_ginger_rogue': { name: 'Ginger Rogue', faction: 'Alley', cost: 1, color: '#A0AEC1', icon: '🐱',
+        stats: {hp: 500, attack: 50, speed: 1.0, range: 1},
+        ability: {name: 'Alley Ambush', trigger: 'on-attack', effect: {crit_chance: 20, crit_mult: 1.5}} },
+      'alley_tuxedo_con': { name: 'Tuxedo Con', faction: 'Alley', cost: 2, color: '#A0AEC1', icon: '😺',
+        stats: {hp: 600, attack: 60, speed: 1.0, range: 1},
+        ability: {name: 'Tuxedo Tactics', trigger: 'passive', effect: {attack_amp: 15}} },
+      'alley_street_yowler': { name: 'Street Yowler', faction: 'Alley', cost: 2, color: '#A0AEC1', icon: '🔊',
+        stats: {hp: 550, attack: 70, speed: 1.1, range: 1},
+        ability: {name: 'Howling Strike', trigger: 'on-attack', effect: {damage_mult: 1.3, target: 'all'}} },
+      'alley_dumpster_king': { name: 'Dumpster King', faction: 'Alley', cost: 3, color: '#A0AEC1', icon: '👑',
+        stats: {hp: 800, attack: 80, speed: 0.9, range: 1},
+        ability: {name: 'King of the Streets', trigger: 'passive', effect: {defense_amp: 20}} },
+      'alley_feral_boss': { name: 'Feral Boss', faction: 'Alley', cost: 4, color: '#A0AEC1', icon: '👹',
+        stats: {hp: 1200, attack: 90, speed: 1.0, range: 1},
+        ability: {name: 'Feral Fury', trigger: 'on-attack', effect: {attack_amp: 30, duration: 3}} },
+
+      // Persian Cats
+      'persian_princess': { name: 'Princess', faction: 'Persian', cost: 1, color: '#F59E0B', icon: '👑',
+        stats: {hp: 500, attack: 55, speed: 0.9, range: 1},
+        ability: {name: 'Royal Grace', trigger: 'passive', effect: {crit_chance: 10}} },
+      'persian_pampered': { name: 'Pampered', faction: 'Persian', cost: 1, color: '#F59E0B', icon: '🛋️',
+        stats: {hp: 600, attack: 45, speed: 0.8, range: 1},
+        ability: {name: 'Luxury Life', trigger: 'passive', effect: {defense_amp: 15}} },
+      'persian_groomer': { name: 'Groomer', faction: 'Persian', cost: 2, color: '#F59E0B', icon: '🛁',
+        stats: {hp: 650, attack: 60, speed: 1.0, range: 1},
+        ability: {name: 'Grooming Touch', trigger: 'on-attack', effect: {heal: 20}} },
+      'persian_snob': { name: 'Snob', faction: 'Persian', cost: 2, color: '#F59E0B', icon: '👑',
+        stats: {hp: 700, attack: 70, speed: 0.9, range: 1},
+        ability: {name: 'Noble Stance', trigger: 'passive', effect: {attack_amp: 10, defense_amp: 10}} },
+      'persian_himalayan': { name: 'Himalayan', faction: 'Persian', cost: 3, color: '#F59E0B', icon: '❄️',
+        stats: {hp: 900, attack: 80, speed: 1.0, range: 1},
+        ability: {name: 'Cold Blooded', trigger: 'passive', effect: {dodge_chance: 15}} },
+      'persian_emperor': { name: 'Emperor', faction: 'Persian', cost: 4, color: '#F59E0B', icon: '👑',
+        stats: {hp: 1200, attack: 95, speed: 0.9, range: 1},
+        ability: {name: 'Royal Decree', trigger: 'on-attack', effect: {damage_mult: 1.4, target: 'all'}} },
+
+      // Siamese Cats
+      'siamese_screamer': { name: 'Screamer', faction: 'Siamese', cost: 1, color: '#4F46E5', icon: '🔊',
+        stats: {hp: 450, attack: 60, speed: 1.2, range: 1},
+        ability: {name: 'Scream of Pain', trigger: 'on-attack', effect: {damage_mult: 1.2, target: 'single'}} },
+      'siamese_chatterbox': { name: 'Chatterbox', faction: 'Siamese', cost: 1, color: '#4F46E5', icon: '💬',
+        stats: {hp: 500, attack: 50, speed: 1.1, range: 1},
+        ability: {name: 'Chattering', trigger: 'passive', effect: {attack_amp: 10}} },
+      'siamese_soprano': { name: 'Soprano', faction: 'Siamese', cost: 2, color: '#4F46E5', icon: '🎤',
+        stats: {hp: 600, attack: 70, speed: 1.3, range: 1},
+        ability: {name: 'Melodic Strike', trigger: 'on-attack', effect: {crit_chance: 25, crit_mult: 1.5}} },
+      'siamese_gossip': { name: 'Gossip', faction: 'Siamese', cost: 2, color: '#4F46E5', icon: '🗣️',
+        stats: {hp: 550, attack: 65, speed: 1.2, range: 1},
+        ability: {name: 'Gossip Network', trigger: 'passive', effect: {ally_attack_amp: 10}} },
+      'siamese_opera': { name: 'Opera', faction: 'Siamese', cost: 3, color: '#4F46E5', icon: '🎭',
+        stats: {hp: 800, attack: 85, speed: 1.1, range: 1},
+        ability: {name: 'Opera Performance', trigger: 'on-attack', effect: {damage_mult: 1.3, target: 'all'}} },
+      'siamese_conductor': { name: 'Conductor', faction: 'Siamese', cost: 4, color: '#4F46E5', icon: '🎼',
+        stats: {hp: 1100, attack: 90, speed: 1.0, range: 1},
+        ability: {name: 'Conducting', trigger: 'passive', effect: {ally_attack_amp: 15, ally_speed_amp: 10}} },
+
+      // Maine Coon Cats
+      'mainecoon_titan': { name: 'Titan', faction: 'Maine Coon', cost: 1, color: '#10B981', icon: '🐾',
+        stats: {hp: 700, attack: 50, speed: 0.8, range: 1},
+        ability: {name: 'Massive Frame', trigger: 'passive', effect: {defense_amp: 25}} },
+      'mainecoon_cub': { name: 'Cub', faction: 'Maine Coon', cost: 1, color: '#10B981', icon: '🍼',
+        stats: {hp: 600, attack: 45, speed: 1.1, range: 1},
+        ability: {name: 'Playful Pounce', trigger: 'on-attack', effect: {crit_chance: 20}} },
+      'mainecoon_guardian': { name: 'Guardian', faction: 'Maine Coon', cost: 2, color: '#10B981', icon: '🛡️',
+        stats: {hp: 800, attack: 60, speed: 0.9, range: 1},
+        ability: {name: 'Guardian Spirit', trigger: 'passive', effect: {dodge_chance: 15}} },
+      'mainecoon_brawler': { name: 'Brawler', faction: 'Maine Coon', cost: 2, color: '#10B981', icon: '🥊',
+        stats: {hp: 750, attack: 70, speed: 1.0, range: 1},
+        ability: {name: 'Brawling', trigger: 'on-attack', effect: {damage_mult: 1.2, target: 'single'}} },
+      'mainecoon_elder': { name: 'Elder', faction: 'Maine Coon', cost: 3, color: '#10B981', icon: '🦳',
+        stats: {hp: 1000, attack: 80, speed: 0.9, range: 1},
+        ability: {name: 'Elder Wisdom', trigger: 'passive', effect: {attack_amp: 20, defense_amp: 15}} },
+      'mainecoon_alpha': { name: 'Alpha', faction: 'Maine Coon', cost: 4, color: '#10B981', icon: '👑',
+        stats: {hp: 1300, attack: 95, speed: 1.0, range: 1},
+        ability: {name: 'Alpha Roar', trigger: 'on-attack', effect: {damage_mult: 1.3, target: 'all', duration: 3}} },
+
+      // Bengal Predators (completed example)
+      'bengal_stalker': { name: 'Bengal Stalker', faction: 'Bengal', cost: 2, color: '#F59E0B', icon: '🐆',
+        stats: {hp: 600, attack: 65, speed: 1.2, range: 2},
+        ability: {name: 'Pounce Ambush', trigger: 'on-attack', effect: {first_hit_damage_mult: 1.5}} },
+      'bengal_kitten': { name: 'Wild Kitten', faction: 'Bengal', cost: 1, color: '#F59E0B', icon: '🐾',
+        stats: {hp: 500, attack: 55, speed: 1.3, range: 1},
+        ability: {name: 'Playful Strike', trigger: 'on-attack', effect: {crit_chance: 25}} },
+      'bengal_hunter': { name: 'Jungle Hunter', faction: 'Bengal', cost: 2, color: '#F59E0B', icon: '🎯',
+        stats: {hp: 550, attack: 70, speed: 1.2, range: 2},
+        ability: {name: 'Stealth Strike', trigger: 'on-attack', effect: {damage_mult: 1.6, backstab: true}} },
+      'bengal_assassin': { name: 'Shadow Assassin', faction: 'Bengal', cost: 3, color: '#F59E0B', icon: '🗡️',
+        stats: {hp: 650, attack: 80, speed: 1.4, range: 1},
+        ability: {name: 'Prowl', trigger: 'passive', effect: {dodge_chance: 20}} },
+      'bengal_pack_leader': { name: 'Pack Leader', faction: 'Bengal', cost: 4, color: '#F59E0B', icon: '👑',
+        stats: {hp: 900, attack: 75, speed: 1.1, range: 1},
+        ability: {name: 'Roar Command', trigger: 'on-cast', effect: {ally_attack_amp: 25, duration: 5}} },
+      'bengal_apex': { name: 'Apex Predator', faction: 'Bengal', cost: 5, color: '#F59E0B', icon: '🐅',
+        stats: {hp: 1300, attack: 110, speed: 1.3, range: 2},
+        ability: {name: 'Savage Leap', trigger: 'on-cast', effect: {target_damage_mult: 3.0, bleed: {dps: 40, duration: 4}}} },
+
+      // Sphynx Cats
+      'sphynx_menace': { name: 'Menace', faction: 'Sphynx', cost: 1, color: '#8B5CF6', icon: '😈',
+        stats: {hp: 450, attack: 50, speed: 1.1, range: 1},
+        ability: {name: 'Mysterious Strike', trigger: 'on-attack', effect: {damage_mult: 1.2, target: 'single'}} },
+      'sphynx_creeper': { name: 'Creeper', faction: 'Sphynx', cost: 1, color: '#8B5CF6', icon: '👻',
+        stats: {hp: 500, attack: 45, speed: 1.2, range: 1},
+        ability: {name: 'Creepy Presence', trigger: 'passive', effect: {dodge_chance: 10}} },
+      'sphynx_warmer': { name: 'Warmer', faction: 'Sphynx', cost: 2, color: '#8B5CF6', icon: '🔥',
+        stats: {hp: 600, attack: 60, speed: 1.0, range: 1},
+        ability: {name: 'Warm Embrace', trigger: 'on-attack', effect: {heal: 15}} },
+      'sphynx_cultist': { name: 'Cultist', faction: 'Sphynx', cost: 2, color: '#8B5CF6', icon: '🕯️',
+        stats: {hp: 550, attack: 65, speed: 1.1, range: 1},
+        ability: {name: 'Cult Ritual', trigger: 'passive', effect: {attack_amp: 10}} },
+      'sphynx_oracle': { name: 'Oracle', faction: 'Sphynx', cost: 3, color: '#8B5CF6', icon: '🔮',
+        stats: {hp: 800, attack: 75, speed: 0.9, range: 1},
+        ability: {name: 'Prophecy', trigger: 'on-attack', effect: {damage_mult: 1.3, target: 'all'}} },
+      'sphynx_overlord': { name: 'Overlord', faction: 'Sphynx', cost: 4, color: '#8B5CF6', icon: '👑',
+        stats: {hp: 1100, attack: 90, speed: 1.0, range: 1},
+        ability: {name: 'Overlord Command', trigger: 'passive', effect: {ally_attack_amp: 15, ally_speed_amp: 10}} },
+
+      // Scottish Fold Cats
+      'scottish_gambler': { name: 'Gambler', faction: 'Scottish Fold', cost: 1, color: '#F43F5E', icon: '🎰',
+        stats: {hp: 500, attack: 50, speed: 1.0, range: 1},
+        ability: {name: 'Lucky Strike', trigger: 'on-attack', effect: {crit_chance: 15}} },
+      'scottish_lucky': { name: 'Lucky', faction: 'Scottish Fold', cost: 1, color: '#F43F5E', icon: '🍀',
+        stats: {hp: 550, attack: 45, speed: 1.1, range: 1},
+        ability: {name: 'Lucky Charm', trigger: 'passive', effect: {gold_on_kill: 2}} },
+      'scottish_dealer': { name: 'Dealer', faction: 'Scottish Fold', cost: 2, color: '#F43F5E', icon: '🃏',
+        stats: {hp: 600, attack: 60, speed: 1.0, range: 1},
+        ability: {name: 'Card Sharp', trigger: 'passive', effect: {attack_amp: 10}} },
+      'scottish_bettor': { name: 'Bettor', faction: 'Scottish Fold', cost: 2, color: '#F43F5E', icon: '💰',
+        stats: {hp: 550, attack: 65, speed: 1.1, range: 1},
+        ability: {name: 'Betting', trigger: 'on-attack', effect: {damage_mult: 1.2, target: 'single'}} },
+      'scottish_fortune': { name: 'Fortune', faction: 'Scottish Fold', cost: 3, color: '#F43F5E', icon: '✨',
+        stats: {hp: 800, attack: 75, speed: 0.9, range: 1},
+        ability: {name: 'Fortune Teller', trigger: 'passive', effect: {defense_amp: 15}} },
+      'scottish_jackpot': { name: 'Jackpot', faction: 'Scottish Fold', cost: 4, color: '#F43F5E', icon: '🏆',
+        stats: {hp: 1100, attack: 90, speed: 1.0, range: 1},
+        ability: {name: 'Jackpot', trigger: 'on-attack', effect: {damage_mult: 1.4, target: 'all'}} },
+
+      // Ragdoll Cats
+      'ragdoll_faker': { name: 'Faker', faction: 'Ragdoll', cost: 1, color: '#06B6D4', icon: '🎭',
+        stats: {hp: 500, attack: 45, speed: 1.1, range: 1},
+        ability: {name: 'Faking', trigger: 'passive', effect: {dodge_chance: 15}} },
+      'ragdoll_pretender': { name: 'Pretender', faction: 'Ragdoll', cost: 1, color: '#06B6D4', icon: '🎭',
+        stats: {hp: 550, attack: 50, speed: 1.0, range: 1},
+        ability: {name: 'Pretending', trigger: 'passive', effect: {attack_amp: 10}} },
+      'ragdoll_imposter': { name: 'Imposter', faction: 'Ragdoll', cost: 2, color: '#06B6D4', icon: '🕵️',
+        stats: {hp: 600, attack: 60, speed: 1.1, range: 1},
+        ability: {name: 'Impersonation', trigger: 'on-attack', effect: {damage_mult: 1.2, target: 'single'}} },
+      'ragdoll_copycat': { name: 'Copycat', faction: 'Ragdoll', cost: 2, color: '#06B6D4', icon: '🔁',
+        stats: {hp: 550, attack: 65, speed: 1.0, range: 1},
+        ability: {name: 'Copycat', trigger: 'passive', effect: {ally_attack_amp: 10}} },
+      'ragdoll_phantom': { name: 'Phantom', faction: 'Ragdoll', cost: 3, color: '#06B6D4', icon: '👻',
+        stats: {hp: 800, attack: 75, speed: 0.9, range: 1},
+        ability: {name: 'Phantom Strike', trigger: 'on-attack', effect: {damage_mult: 1.3, target: 'all'}} },
+      'ragdoll_mirage': { name: 'Mirage', faction: 'Ragdoll', cost: 4, color: '#06B6D4', icon: '✨',
+        stats: {hp: 1100, attack: 90, speed: 1.0, range: 1},
+        ability: {name: 'Mirage', trigger: 'passive', effect: {attack_amp: 15, defense_amp: 10}} }
+    };
+
+    // ────────────────────────────────────────────────
+    //  CORE GAME FUNCTIONS
+    // ────────────────────────────────────────────────
+
+    function updateUI() {
+      document.getElementById('gold').textContent = gold;
+      document.getElementById('health').textContent = health;
+      document.getElementById('level').textContent = playerLevel;
+      document.getElementById('round').textContent = currentRound;
+      document.getElementById('unitcap').textContent = `${Object.keys(playerBoard).length}/${playerLevel + 2}`;
+    }
+
+    function giveInterestAndStreak() {
+      const interest = Math.min(Math.floor(gold / 10), 5);
+      gold += interest;
+
+      let streakBonus = 0;
+      if (streak > 0) streakBonus = Math.min(streak, 3);      // win streak
+      else if (streak < 0) streakBonus = Math.min(-streak, 3); // loss streak gives less
+
+      gold += streakBonus;
+      combatLog.push(`+${interest} interest, +${streakBonus} streak bonus`);
+    }
+
+    function tryMergeUnit(unitId, hexKeyOrBenchIndex, stars = 1) {
+      // Very basic merge check - look for same type on bench + board
+      let count = 0;
+      let positions = [];
+
+      // Count on bench
+      bench.forEach((u, i) => {
+        if (u && u.id === unitId && u.stars === stars) {
+          count++;
+          positions.push({type: 'bench', index: i});
+        }
+      });
+
+      // Count on board
+      Object.entries(playerBoard).forEach(([key, u]) => {
+        if (u.id === unitId && u.stars === stars) {
+          count++;
+          positions.push({type: 'board', key});
+        }
+      });
+
+      if (count >= 3) {
+        // Merge → upgrade to next star
+        const newStars = stars + 1;
+
+        // Remove 3 old units
+        let removed = 0;
+        for (let pos of positions) {
+          if (removed >= 3) break;
+          if (pos.type === 'bench') {
+            bench[pos.index] = null;
+          } else {
+            delete playerBoard[pos.key];
+          }
+          removed++;
+        }
+
+        // Place upgraded unit at target location
+        if (hexKeyOrBenchIndex.includes(',')) {
+          // board
+          playerBoard[hexKeyOrBenchIndex] = {id: unitId, stars: newStars};
+        } else {
+          // bench
+          const idx = parseInt(hexKeyOrBenchIndex);
+          bench[idx] = {id: unitId, stars: newStars};
+        }
+
+        combatLog.push(`Merged 3 ${unitsData[unitId].name} → ${newStars}★ !`);
+        return true;
+      }
+      return false;
+    }
+
+    function showDamageNumber(x, y, amount) {
+      const dmg = document.createElement('div');
+      dmg.className = 'damage-number';
+      dmg.textContent = amount;
+      dmg.style.left = `${x}px`;
+      dmg.style.top = `${y}px`;
+      document.body.appendChild(dmg);
+      setTimeout(() => dmg.remove(), 1500);
+    }
+
+    // Placeholder renderBoard (expand with your full hex logic)
+    function renderBoard() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#0a0a1a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw hex grid + units (simplified)
+      boardHexes.forEach(hex => {
+        const key = `${hex.col},${hex.row}`;
+        const unit = playerBoard[key] || enemyBoard[key];
+        if (unit) {
+          const ud = unitsData[unit.id];
+          ctx.fillStyle = ud.color;
+          ctx.fillRect(hex.col * 80 + 100, hex.row * 70 + 100, 60, 60); // placeholder
+          ctx.fillStyle = '#fff';
+          ctx.font = '20px Arial';
+          ctx.fillText(ud.icon, hex.col * 80 + 115, hex.row * 70 + 135);
+
+          // Stars
+          if (unit.stars > 1) {
+            ctx.fillStyle = unit.stars === 3 ? '#f4a' : '#4af';
+            ctx.font = '14px Arial';
+            ctx.fillText('★'.repeat(unit.stars), hex.col * 80 + 110, hex.row * 70 + 165);
+          }
+        }
+      });
+    }
+
+    // ────────────────────────────────────────────────
+    //  SHOP FUNCTIONS
+    // ────────────────────────────────────────────────
+
+    function renderShop() {
+      const shop = document.getElementById('shop');
+      shop.innerHTML = '';
+
+      shopUnits.forEach((unitId, index) => {
+        const unit = unitsData[unitId];
+        const unitElement = document.createElement('div');
+        unitElement.className = 'unit';
+        unitElement.innerHTML = `
+          <div class="unit-icon">${unit.icon}</div>
+          <div class="unit-name">${unit.name}</div>
+          <div class="unit-cost">${unit.cost}</div>
+          <div class="unit-faction">${unit.faction}</div>
+        `;
+        unitElement.dataset.unitId = unitId;
+        unitElement.draggable = true;
+
+        // Add event listeners for dragging
+        unitElement.addEventListener('dragstart', handleDragStart);
+        unitElement.addEventListener('dragend', handleDragEnd);
+
+        shop.addEventListener('dragover', handleDragOver);
+        shop.addEventListener('drop', handleDrop);
+
+        shop.appendChild(unitElement);
+      });
+    }
+
+    // ────────────────────────────────────────────────
+    //  BENCH FUNCTIONS
+    // ────────────────────────────────────────────────
+
+    function renderBench() {
+      const benchContainer = document.getElementById('bench-container');
+      benchContainer.innerHTML = '';
+
+      for (let i = 0; i < 9; i++) {
+        const slot = document.createElement('div');
+        slot.className = 'bench-slot';
+        slot.dataset.index = i;
+
+        if (bench[i]) {
+          slot.classList.add('occupied');
+          const unit = bench[i];
+          const ud = unitsData[unit.id];
+          slot.innerHTML = `
+            <div class="bench-unit">${ud.icon}</div>
+            <div class="bench-unit-stars">★${unit.stars}</div>
+          `;
+
+          // Add drag events
+          slot.addEventListener('dragstart', handleBenchDragStart);
+          slot.addEventListener('dragend', handleDragEnd);
+        }
+
+        benchContainer.appendChild(slot);
+      }
+    }
+
+    // ────────────────────────────────────────────────
+    //  DRAG & DROP HANDLERS
+    // ────────────────────────────────────────────────
+
+    function handleDragStart(e) {
+      dragStart = 'shop';
+      dragUnit = e.target.dataset.unitId;
+      e.dataTransfer.effectAllowed = 'move';
+    }
+
+    function handleBenchDragStart(e) {
+      dragStart = 'bench';
+      const index = parseInt(e.target.dataset.index);
+      if (bench[index]) {
+        dragUnit = bench[index];
+        e.dataTransfer.effectAllowed = 'move';
+      }
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+
+      if (!dragUnit) return;
+
+      const target = e.target.closest('.bench-slot');
+      if (target) {
+        const index = parseInt(target.dataset.index);
+
+        if (dragStart === 'shop') {
+          // Move from shop to bench
+          const shopIndex = shopUnits.indexOf(dragUnit);
+          if (shopIndex !== -1) {
+            shopUnits.splice(shopIndex, 1);
+            bench[index] = {id: dragUnit, stars: 1};
+            renderShop();
+            renderBench();
+          }
+        } else if (dragStart === 'bench') {
+          // Move from bench to bench
+          const fromIndex = parseInt(target.dataset.index);
+          if (fromIndex !== index) {
+            const temp = bench[index];
+            bench[index] = bench[fromIndex];
+            bench[fromIndex] = temp;
+            renderBench();
+          }
+        }
+      }
+
+      dragStart = null;
+      dragUnit = null;
+    }
+
+    function handleDragEnd() {
+      dragStart = null;
+      dragUnit = null;
+    }
+
+    // ────────────────────────────────────────────────
+    //  INIT & EVENT LISTENERS
+    // ────────────────────────────────────────────────
+
+    function init() {
+      shopUnits = Array(5).fill().map(() => {
+        const keys = Object.keys(unitsData);
+        return keys[Math.floor(Math.random() * keys.length)];
+      });
+      renderShop();
+      renderBoard();
+      renderBench();
+      updateUI();
+
+      // Add event listeners for buttons
+      document.getElementById('fight').onclick = () => {
+        if (combatState !== 'idle') return;
+        giveInterestAndStreak();
+        preCombatBoard = { ...playerBoard };
+        // startCombat() ... your existing combat start logic
+      };
+
+      document.getElementById('reroll').onclick = () => {
+        if (gold < 2) return;
+        gold -= 2;
+        shopUnits = Array(5).fill().map(() => {
+          const keys = Object.keys(unitsData);
+          return keys[Math.floor(Math.random() * keys.length)];
+        });
+        renderShop();
+        updateUI();
+      };
+
+      document.getElementById('levelup').onclick = () => {
+        if (gold < 4) return;
+        gold -= 4;
+        playerLevel++;
+        updateUI();
+      };
+
+      // Setup bench events
+      setupBenchEvents();
+    }
+
+    function setupBenchEvents() {
+      const benchSlots = document.querySelectorAll('.bench-slot');
+      benchSlots.forEach(slot => {
+        slot.addEventListener('dragover', handleDragOver);
+        slot.addEventListener('drop', handleDrop);
+      });
+    }
+
+    // Load unit images
+    function loadUnitImages() {
+      const unitImageMap = {
+        'alley_tabby_thug': 'alley_tabby_thug.png',
+        'alley_ginger_rogue': 'alley_ginger_rogue.png',
+        'alley_tuxedo_con': 'alley_tuxedo_con.png',
+        'alley_street_yowler': 'alley_street_yowler.png',
+        'alley_dumpster_king': 'alley_dumpster_king.png',
+        'alley_feral_boss': 'alley_feral_boss.png',
+        'persian_princess': 'persian_princess.png',
+        'persian_pampered': 'persian_pampered.png',
+        'persian_groomer': 'persian_groomer.png',
+        'persian_snob': 'persian_snob.png',
+        'persian_himalayan': 'persian_himalayan.png',
+        'persian_emperor': 'persian_emperor.png',
+        'siamese_screamer': 'siamese_screamer.png',
+        'siamese_chatterbox': 'siamese_chatterbox.png',
+        'siamese_soprano': 'siamese_soprano.png',
+        'siamese_gossip': 'siamese_gossip.png',
+        'siamese_opera': 'siamese_opera.png',
+        'siamese_conductor': 'siamese_conductor.png',
+        'mainecoon_titan': 'mainecoon_titan.png',
+        'mainecoon_cub': 'mainecoon_cub.png',
+        'mainecoon_guardian': 'mainecoon_guardian.png',
+        'mainecoon_brawler': 'mainecoon_brawler.png',
+        'mainecoon_elder': 'mainecoon_elder.png',
+        'mainecoon_alpha': 'mainecoon_alpha.png',
+        'bengal_stalker': 'bengal_stalker.png',
+        'bengal_kitten': 'bengal_kitten.png',
+        'bengal_hunter': 'bengal_hunter.png',
+        'bengal_assassin': 'bengal_assassin.png',
+        'bengal_pack_leader': 'bengal_pack_leader.png',
+        'bengal_apex': 'bengal_apex.png',
+        'sphynx_menace': 'sphynx_menace.png',
+        'sphynx_creeper': 'sphynx_creeper.png',
+        'sphynx_warmer': 'sphynx_warmer.png',
+        'sphynx_cultist': 'sphynx_cultist.png',
+        'sphynx_oracle': 'sphynx_oracle.png',
+        'sphynx_overlord': 'sphynx_overlord.png',
+        'scottish_gambler': 'scottish_gambler.png',
+        'scottish_lucky': 'scottish_lucky.png',
+        'scottish_dealer': 'scottish_dealer.png',
+        'scottish_bettor': 'scottish_bettor.png',
+        'scottish_fortune': 'scottish_fortune.png',
+        'scottish_jackpot': 'scottish_jackpot.png',
+        'ragdoll_faker': 'ragdoll_faker.png',
+        'ragdoll_pretender': 'ragdoll_pretender.png',
+        'ragdoll_imposter': 'ragdoll_imposter.png',
+        'ragdoll_copycat': 'ragdoll_copycat.png',
+        'ragdoll_phantom': 'ragdoll_phantom.png',
+        'ragdoll_mirage': 'ragdoll_mirage.png'
+      };
+
+      // This would be where you load the actual images
+      // For now, we'll just use placeholder
+      Object.keys(unitImageMap).forEach(unitId => {
+        unitImages[unitId] = new Image();
+        unitImages[unitId].src = unitImageMap[unitId];
+      });
+    }
+
+    // Start
+    init();
+
+    // Load images
+    loadUnitImages();
+
+    // ────────────────────────────────────────────────
+    //  AUTHENTICATION SYSTEM
+    // ────────────────────────────────────────────────
+
+    const API_URL = '/api';  // Update this to your actual API path
+
+    // Auth state
+    let currentUser = null;
+    let authMode = 'login'; // 'login' or 'register'
+
+    // Check login status on page load
+    async function checkAuth() {
+      try {
+        const response = await fetch(`${API_URL}/auth.php?action=check`, {
+          credentials: 'include'
+        });
+        const data = await response.json();
+
+        if (data.logged_in && data.user) {
+          setLoggedIn(data.user);
+        }
+
+        // Check URL params for login status
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('login') === 'success') {
+          // Refresh user data after OAuth redirect
+          fetchUserData();
+          // Clean URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+        if (urlParams.get('login_error')) {
+          showAuthError(decodeURIComponent(urlParams.get('login_error')));
+          openAuthModal();
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      } catch (err) {
+        console.log('Auth check failed:', err);
+      }
+    }
+
+    // Fetch full user data
+    async function fetchUserData() {
+      try {
+        const response = await fetch(`${API_URL}/auth.php?action=me`, {
+          credentials: 'include'
+        });
+        const data = await response.json();
+
+        if (data.user) {
+          setLoggedIn(data.user);
+        }
+      } catch (err) {
+        console.log('Failed to fetch user:', err);
+      }
+    }
+
+    // Update UI for logged-in user
+    function setLoggedIn(user) {
+      currentUser = user;
+
+      document.getElementById('login-btn').style.display = 'none';
+      document.getElementById('user-profile').style.display = 'flex';
+
+      document.getElementById('user-name').textContent = user.display_name || user.username;
+
+      const currencyEl = document.getElementById('user-currency');
+      currencyEl.innerHTML = `
+        <span class="coins">🪙 ${user.cat_coins || 0}</span>
+        <span class="gems">💎 ${user.premium_gems || 0}</span>
+      `;
+
+      const avatarEl = document.getElementById('user-avatar');
+      if (user.avatar_url) {
+        avatarEl.innerHTML = `<img src="${user.avatar_url}" alt="Avatar">`;
+      } else {
+        avatarEl.innerHTML = '🐱';
+      }
+
+      closeAuthModal();
+    }
+
+    // Update UI for logged-out state
+    function setLoggedOut() {
+      currentUser = null;
+
+      document.getElementById('login-btn').style.display = 'flex';
+      document.getElementById('user-profile').style.display = 'none';
+      document.getElementById('user-dropdown').classList.remove('show');
+    }
+
+    // Open auth modal
+    function openAuthModal() {
+      document.getElementById('auth-modal').classList.add('active');
+      document.getElementById('auth-error').classList.remove('show');
+    }
+
+    // Close auth modal
+    function closeAuthModal() {
+      document.getElementById('auth-modal').classList.remove('active');
+      document.getElementById('auth-form').reset();
+      document.getElementById('auth-error').classList.remove('show');
+    }
+
+    // Toggle between login and register
+    function toggleAuthMode() {
+      authMode = authMode === 'login' ? 'register' : 'login';
+
+      const usernameField = document.getElementById('auth-username');
+      const submitBtn = document.getElementById('auth-submit-btn');
+      const subtitle = document.getElementById('auth-subtitle');
+      const switchText = document.getElementById('auth-switch-text');
+      const switchLink = document.getElementById('auth-switch-link');
+
+      if (authMode === 'register') {
+        usernameField.style.display = 'block';
+        usernameField.required = true;
+        submitBtn.textContent = 'Create Account';
+        subtitle.textContent = 'Create an account to save your progress';
+        switchText.textContent = 'Already have an account?';
+        switchLink.textContent = 'Sign In';
+      } else {
+        usernameField.style.display = 'none';
+        usernameField.required = false;
+        submitBtn.textContent = 'Sign In';
+        subtitle.textContent = 'Sign in to save your progress';
+        switchText.textContent = "Don't have an account?";
+        switchLink.textContent = 'Sign Up';
+      }
+    }
+
+    // Handle form submission
+    async function handleAuthSubmit(event) {
+      event.preventDefault();
+
+      const email = document.getElementById('auth-email').value;
+      const password = document.getElementById('auth-password').value;
+      const username = document.getElementById('auth-username').value;
+
+      const action = authMode === 'register' ? 'register' : 'login';
+
+      try {
+        const response = await fetch(`${API_URL}/auth.php?action=${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email, password, username })
+        });
+
+        const data = await response.json();
+
+        if (data.error) {
+          showAuthError(data.error);
+          return;
+        }
+
+        if (data.success && data.user) {
+          setLoggedIn(data.user);
+        }
+      } catch (err) {
+        showAuthError('Connection failed. Please try again.');
+      }
+    }
+
+    // Show auth error
+    function showAuthError(message) {
+      const errorEl = document.getElementById('auth-error');
+      errorEl.textContent = message;
+      errorEl.classList.add('show');
+    }
+
+    // OAuth logins
+    function loginWithDiscord() {
+      window.location.href = `${API_URL}/oauth_discord.php`;
+    }
+
+    function loginWithGoogle() {
+      window.location.href = `${API_URL}/oauth_google.php`;
+    }
+
+    // Logout
+    async function logout() {
+      try {
+        await fetch(`${API_URL}/auth.php?action=logout`, {
+          method: 'POST',
+          credentials: 'include'
+        });
+      } catch (err) {
+        console.log('Logout error:', err);
+      }
+
+      setLoggedOut();
+      document.getElementById('user-dropdown').classList.remove('show');
+    }
+
+    // Toggle user dropdown
+    function toggleUserDropdown() {
+      const dropdown = document.getElementById('user-dropdown');
+      dropdown.classList.toggle('show');
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      const userArea = document.getElementById('user-area');
+      if (!userArea.contains(e.target)) {
+        document.getElementById('user-dropdown').classList.remove('show');
+      }
+    });
+
+    // Profile/Stats/Cosmetics placeholders
+    function openProfile() {
+      alert('Profile coming soon! 🐱');
+      document.getElementById('user-dropdown').classList.remove('show');
+    }
+
+    function openCosmetics() {
+      alert('Cosmetics store coming soon! 🎨');
+      document.getElementById('user-dropdown').classList.remove('show');
+    }
+
+    function openStats() {
+      if (currentUser) {
+        alert(`📊 Your Stats:\n\nWins: ${currentUser.total_wins || 0}\nLosses: ${currentUser.total_losses || 0}\nGames: ${currentUser.total_games || 0}`);
+      }
+      document.getElementById('user-dropdown').classList.remove('show');
+    }
+
+    // Initialize auth on page load
+    checkAuth();
+  </script>
+</body>
+</html>
