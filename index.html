@@ -5057,12 +5057,12 @@
       // Load all images
       Object.keys(unitImageMap).forEach(unitId => {
         const img = new Image();
-        img.src = 'images/' + unitImageMap[unitId];
+        img.src = 'assets/images/units/' + unitId + '.png';
         img.onload = function() {
           unitImages[unitId] = img;
         };
         img.onerror = function() {
-          console.warn(`Failed to load image for unit: ${unitId}`);
+//          console.warn(`Failed to load image for unit: ${unitId}`);
         };
       });
     }
