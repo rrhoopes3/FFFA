@@ -1,9 +1,13 @@
 // ============================================================
-//  FFFA — WebSocket Game Server
+//  FFFA — HTTP + WebSocket Game Server
 //  Run: node server.js
-//  Clients connect via ws://localhost:3000
+//  Serves static files AND WebSocket on the same port
+//  Compatible with cPanel/Passenger (listens on PORT env var)
 // ============================================================
 
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const WebSocket = require('ws');
 const crypto = require('crypto');
 const {
@@ -14,7 +18,77 @@ const {
 } = require('./shared.js');
 
 const PORT = process.env.PORT || 3000;
-const wss = new WebSocket.Server({ port: PORT });
+
+// ===== MIME TYPES =====
+const MIME_TYPES = {
+  '.html': 'text/html',
+  '.js':   'application/javascript',
+  '.json': 'application/json',
+  '.css':  'text/css',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif':  'image/gif',
+  '.svg':  'image/svg+xml',
+  '.ico':  'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2':'font/woff2',
+};
+
+// ===== STATIC FILE SERVER =====
+const APP_ROOT = __dirname;
+
+function serveStatic(req, res) {
+  // Parse URL, default to index.html
+  let urlPath = req.url.split('?')[0];
+  if (urlPath === '/') urlPath = '/index.html';
+
+  // Security: prevent directory traversal
+  const safePath = path.normalize(urlPath).replace(/^(\.\.[\/\\])+/, '');
+  const filePath = path.join(APP_ROOT, safePath);
+
+  // Make sure we're not serving outside app root
+  if (!filePath.startsWith(APP_ROOT)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+
+  // Don't serve server.js, .git, node_modules, etc.
+  const blocked = ['/server.js', '/shared.js', '/.git', '/node_modules', '/.htaccess', '/.env'];
+  if (blocked.some(b => safePath.startsWith(b))) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      if (err.code === 'ENOENT') {
+        res.writeHead(404);
+        res.end('Not Found');
+      } else {
+        res.writeHead(500);
+        res.end('Internal Server Error');
+      }
+      return;
+    }
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=86400'
+    });
+    res.end(data);
+  });
+}
+
+// ===== CREATE HTTP SERVER =====
+const httpServer = http.createServer(serveStatic);
+
+// ===== ATTACH WEBSOCKET TO HTTP SERVER =====
+const wss = new WebSocket.Server({ server: httpServer });
 
 // ===== CONSTANTS =====
 const MAX_PLAYERS = 8;
@@ -1412,4 +1486,9 @@ wss.on('connection', (ws) => {
   });
 });
 
-console.log(`FFFA server listening on ws://localhost:${PORT}`);
+// ===== START SERVER =====
+httpServer.listen(PORT, () => {
+  console.log(`FFFA server listening on http://localhost:${PORT}`);
+  console.log(`WebSocket available at ws://localhost:${PORT}`);
+  console.log(`Static files served from ${APP_ROOT}`);
+});
