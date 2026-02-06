@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FFFA - Sprite Sheet Example: Alley Tabby Thug</title>
+<style>
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', sans-serif;
+    margin: 0;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  h1 {
+    color: #ff6b6b;
+    margin-bottom: 5px;
+  }
+
+  h2 {
+    color: #ffd93d;
+    font-weight: normal;
+    margin-top: 0;
+  }
+
+  .info {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 15px 25px;
+    margin: 15px 0;
+    max-width: 800px;
+    line-height: 1.6;
+  }
+
+  .info code {
+    background: #0f3460;
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: #4fc3f7;
+    font-size: 0.95em;
+  }
+
+  /* ---- Sprite Sheet Canvas ---- */
+  .sprite-sheet-container {
+    position: relative;
+    margin: 20px 0;
+  }
+
+  .sprite-sheet {
+    border: 2px solid #e94560;
+    border-radius: 4px;
+    image-rendering: pixelated;
+  }
+
+  .sheet-label {
+    position: absolute;
+    top: -28px;
+    left: 0;
+    background: #e94560;
+    color: white;
+    padding: 3px 12px;
+    border-radius: 4px 4px 0 0;
+    font-size: 0.85em;
+    font-weight: bold;
+  }
+
+  /* ---- Animation Preview ---- */
+  .preview-section {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 30px;
+    justify-content: center;
+    margin: 25px 0;
+  }
+
+  .animation-preview {
+    text-align: center;
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 15px;
+    min-width: 140px;
+  }
+
+  .animation-preview h3 {
+    color: #ffd93d;
+    margin: 0 0 10px 0;
+    font-size: 0.95em;
+  }
+
+  .anim-canvas {
+    border: 1px solid #333;
+    border-radius: 4px;
+    background: #111;
+    display: block;
+    margin: 0 auto 8px auto;
+  }
+
+  .frame-info {
+    font-size: 0.75em;
+    color: #888;
+  }
+
+  /* ---- Layout Diagram ---- */
+  .layout-grid {
+    display: grid;
+    gap: 2px;
+    margin: 20px 0;
+    background: #333;
+    border: 2px solid #555;
+    border-radius: 4px;
+    padding: 2px;
+  }
+
+  .layout-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7em;
+    font-weight: bold;
+    border-radius: 2px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+    margin: 10px 0 25px 0;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8em;
+  }
+
+  .legend-swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid #555;
+  }
+</style>
+</head>
+<body>
+
+<h1>FFFA Sprite Sheet Example</h1>
+<h2>Unit: Alley Tabby Thug (Tank)</h2>
+
+<div class="info">
+  <strong>Sprite Sheet Layout:</strong> Each row represents one animation.
+  Each column is a frame within that animation. All frames are a uniform
+  <code>64&times;64 px</code> cell size. The full sheet below is
+  <code>384&times;448 px</code> (6 columns &times; 7 rows).
+</div>
+
+<!-- ===== Generated Sprite Sheet (drawn on canvas) ===== -->
+<div class="sprite-sheet-container">
+  <div class="sheet-label">alley_tabby_thug_sheet.png &mdash; 384 &times; 448</div>
+  <canvas id="spriteSheet" class="sprite-sheet" width="384" height="448"></canvas>
+</div>
+
+<!-- ===== Layout Diagram ===== -->
+<h2>Sheet Layout Map</h2>
+<div id="layoutGrid" class="layout-grid"></div>
+<div class="legend" id="legend"></div>
+
+<!-- ===== Live Animation Previews ===== -->
+<h2>Animation Previews</h2>
+<div class="preview-section" id="previews"></div>
+
+<div class="info">
+  <strong>Usage in code:</strong><br>
+  To render frame <code>n</code> of animation row <code>r</code>:<br><br>
+  <code>
+    sx = n * 64; &nbsp; sy = r * 64;<br>
+    ctx.drawImage(sheet, sx, sy, 64, 64, destX, destY, 64, 64);
+  </code>
+  <br><br>
+  <strong>Recommended frame rates:</strong><br>
+  Idle: 4 fps &bull; Walk: 8 fps &bull; Attack: 12 fps &bull; Hurt/Death: 10 fps &bull; Block: 6 fps
+</div>
+
+<script>
+// ============================================================
+//  SPRITE SHEET DEFINITION
+//  Each animation: { name, row, frames, color (for demo), fps }
+// ============================================================
+const CELL = 64;
+const COLS = 6;
+
+const animations = [
+  { name: 'Idle',        row: 0, frames: 4, color: '#4caf50', fps: 4  },
+  { name: 'Walk',        row: 1, frames: 6, color: '#2196f3', fps: 8  },
+  { name: 'Attack',      row: 2, frames: 6, color: '#f44336', fps: 12 },
+  { name: 'Block',       row: 3, frames: 4, color: '#ff9800', fps: 6  },
+  { name: 'Hurt',        row: 4, frames: 3, color: '#e91e63', fps: 10 },
+  { name: 'Death',       row: 5, frames: 5, color: '#9c27b0', fps: 10 },
+  { name: 'Taunt',       row: 6, frames: 4, color: '#00bcd4', fps: 6  },
+];
+
+const ROWS = animations.length;
+
+// ============================================================
+//  DRAW THE SPRITE SHEET (placeholder frames)
+// ============================================================
+const sheetCanvas = document.getElementById('spriteSheet');
+const ctx = sheetCanvas.getContext('2d');
+
+// Cat body parts drawing helper
+function drawCatFrame(cx, cy, anim, frameIdx, totalFrames) {
+  const t = frameIdx / Math.max(totalFrames - 1, 1); // 0..1
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  // --- Body ---
+  const bodyBob = anim.name === 'Idle' ? Math.sin(t * Math.PI * 2) * 2 :
+                  anim.name === 'Walk' ? Math.sin(t * Math.PI * 2) * 3 :
+                  anim.name === 'Hurt' ? -t * 6 :
+                  anim.name === 'Death' ? -t * 12 :
+                  0;
+  const bodyLean = anim.name === 'Attack' ? Math.sin(t * Math.PI) * 8 :
+                   anim.name === 'Death' ? t * 15 :
+                   anim.name === 'Taunt' ? Math.sin(t * Math.PI * 2) * 4 :
+                   0;
+  const bodyY = bodyBob;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(0, 22, 14, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Body oval (gray tabby color)
+  ctx.fillStyle = '#7a7062';
+  ctx.beginPath();
+  ctx.ellipse(bodyLean * 0.3, bodyY, 14, 16, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Tabby stripes
+  ctx.strokeStyle = '#5a5046';
+  ctx.lineWidth = 1.5;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(bodyLean * 0.3 - 6, bodyY + i * 5);
+    ctx.lineTo(bodyLean * 0.3 + 6, bodyY + i * 5);
+    ctx.stroke();
+  }
+
+  // --- Shield (left side) ---
+  if (anim.name !== 'Death') {
+    const shieldX = anim.name === 'Block' ? -18 + Math.sin(t * Math.PI) * -4 : -18;
+    const shieldY = bodyY - 2;
+    ctx.fillStyle = '#8B4513';
+    ctx.beginPath();
+    ctx.ellipse(shieldX, shieldY, 8, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#654321';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // Shield cross
+    ctx.strokeStyle = '#DAA520';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(shieldX, shieldY - 8);
+    ctx.lineTo(shieldX, shieldY + 8);
+    ctx.moveTo(shieldX - 5, shieldY);
+    ctx.lineTo(shieldX + 5, shieldY);
+    ctx.stroke();
+  }
+
+  // --- Head ---
+  const headY = bodyY - 18;
+  const headX = bodyLean * 0.2;
+  ctx.fillStyle = '#8a8070';
+  ctx.beginPath();
+  ctx.arc(headX, headY, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ears
+  ctx.fillStyle = '#8a8070';
+  ctx.beginPath();
+  ctx.moveTo(headX - 8, headY - 6);
+  ctx.lineTo(headX - 12, headY - 15);
+  ctx.lineTo(headX - 3, headY - 9);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(headX + 8, headY - 6);
+  ctx.lineTo(headX + 12, headY - 15);
+  ctx.lineTo(headX + 3, headY - 9);
+  ctx.fill();
+
+  // Inner ears
+  ctx.fillStyle = '#c4a07a';
+  ctx.beginPath();
+  ctx.moveTo(headX - 7, headY - 7);
+  ctx.lineTo(headX - 10, headY - 13);
+  ctx.lineTo(headX - 4, headY - 9);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(headX + 7, headY - 7);
+  ctx.lineTo(headX + 10, headY - 13);
+  ctx.lineTo(headX + 4, headY - 9);
+  ctx.fill();
+
+  // Red bandana
+  ctx.fillStyle = '#cc2222';
+  ctx.beginPath();
+  ctx.moveTo(headX - 10, headY - 2);
+  ctx.lineTo(headX + 10, headY - 2);
+  ctx.lineTo(headX + 9, headY + 2);
+  ctx.lineTo(headX - 9, headY + 2);
+  ctx.closePath();
+  ctx.fill();
+  // Skull on bandana
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(headX, headY, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#cc2222';
+  ctx.fillRect(headX - 1, headY - 0.5, 0.8, 0.8);
+  ctx.fillRect(headX + 0.3, headY - 0.5, 0.8, 0.8);
+
+  // Eyes
+  const eyeState = anim.name === 'Hurt' ? 'squint' :
+                   anim.name === 'Death' && t > 0.5 ? 'x' :
+                   anim.name === 'Taunt' ? 'smirk' : 'normal';
+
+  if (eyeState === 'normal' || eyeState === 'smirk') {
+    ctx.fillStyle = '#ffeb3b';
+    ctx.beginPath();
+    ctx.ellipse(headX - 4, headY - 4, 2.5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(headX + 4, headY - 4, 2.5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Pupils
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.ellipse(headX - 4, headY - 4, 1, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(headX + 4, headY - 4, 1, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (eyeState === 'squint') {
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(headX - 6, headY - 4);
+    ctx.lineTo(headX - 2, headY - 3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(headX + 2, headY - 3);
+    ctx.lineTo(headX + 6, headY - 4);
+    ctx.stroke();
+  } else if (eyeState === 'x') {
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1.5;
+    [-4, 4].forEach(ex => {
+      ctx.beginPath();
+      ctx.moveTo(headX + ex - 2, headY - 6);
+      ctx.lineTo(headX + ex + 2, headY - 2);
+      ctx.moveTo(headX + ex + 2, headY - 6);
+      ctx.lineTo(headX + ex - 2, headY - 2);
+      ctx.stroke();
+    });
+  }
+
+  // Mouth
+  if (anim.name === 'Taunt') {
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(headX, headY - 1, 3, 0.1 * Math.PI, 0.9 * Math.PI);
+    ctx.stroke();
+    // Tongue
+    ctx.fillStyle = '#ff6b6b';
+    ctx.beginPath();
+    ctx.ellipse(headX, headY + 1.5, 1.5, 1, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (anim.name === 'Hurt' || anim.name === 'Attack') {
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.ellipse(headX, headY, 3, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff6b6b';
+    ctx.beginPath();
+    ctx.ellipse(headX, headY + 0.5, 2, 1, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- Legs ---
+  if (anim.name !== 'Death' || t < 0.7) {
+    const legSpread = anim.name === 'Walk' ? Math.sin(t * Math.PI * 2) * 5 : 0;
+    ctx.fillStyle = '#7a7062';
+    // Left leg
+    ctx.fillRect(-8 - legSpread, bodyY + 12, 5, 10);
+    // Right leg
+    ctx.fillRect(3 + legSpread, bodyY + 12, 5, 10);
+    // Feet
+    ctx.fillStyle = '#5a5046';
+    ctx.fillRect(-9 - legSpread, bodyY + 20, 7, 3);
+    ctx.fillRect(2 + legSpread, bodyY + 20, 7, 3);
+  }
+
+  // --- Attack effect ---
+  if (anim.name === 'Attack' && t > 0.3 && t < 0.8) {
+    ctx.strokeStyle = `rgba(255, 200, 0, ${1 - t})`;
+    ctx.lineWidth = 2;
+    const slashX = 16 + t * 10;
+    ctx.beginPath();
+    ctx.moveTo(slashX - 5, bodyY - 15);
+    ctx.lineTo(slashX + 5, bodyY + 10);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(slashX - 2, bodyY - 12);
+    ctx.lineTo(slashX + 8, bodyY + 5);
+    ctx.stroke();
+  }
+
+  // --- Block effect ---
+  if (anim.name === 'Block' && t > 0.2 && t < 0.7) {
+    ctx.strokeStyle = `rgba(255, 180, 0, ${0.7})`;
+    ctx.lineWidth = 1.5;
+    const sparkX = -22;
+    for (let i = 0; i < 3; i++) {
+      const sy2 = bodyY - 8 + i * 6;
+      ctx.beginPath();
+      ctx.moveTo(sparkX - 4, sy2);
+      ctx.lineTo(sparkX - 8, sy2 - 3);
+      ctx.moveTo(sparkX - 4, sy2);
+      ctx.lineTo(sparkX - 9, sy2 + 2);
+      ctx.stroke();
+    }
+  }
+
+  // --- Hurt flash ---
+  if (anim.name === 'Hurt') {
+    ctx.fillStyle = `rgba(255, 0, 0, ${0.15 + Math.sin(t * Math.PI * 4) * 0.15})`;
+    ctx.fillRect(-CELL / 2, -CELL / 2, CELL, CELL);
+  }
+
+  ctx.restore();
+}
+
+// Fill background
+ctx.fillStyle = '#222';
+ctx.fillRect(0, 0, 384, 448);
+
+// Draw grid lines
+ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+ctx.lineWidth = 0.5;
+for (let r = 0; r <= ROWS; r++) {
+  ctx.beginPath();
+  ctx.moveTo(0, r * CELL);
+  ctx.lineTo(COLS * CELL, r * CELL);
+  ctx.stroke();
+}
+for (let c = 0; c <= COLS; c++) {
+  ctx.beginPath();
+  ctx.moveTo(c * CELL, 0);
+  ctx.lineTo(c * CELL, ROWS * CELL);
+  ctx.stroke();
+}
+
+// Draw each frame
+animations.forEach(anim => {
+  for (let f = 0; f < anim.frames; f++) {
+    const x = f * CELL;
+    const y = anim.row * CELL;
+
+    // Subtle cell tint
+    ctx.fillStyle = anim.color + '11';
+    ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
+
+    // Draw the cat in this frame
+    drawCatFrame(x + CELL / 2, y + CELL / 2 + 4, anim, f, anim.frames);
+
+    // Frame number label
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '9px monospace';
+    ctx.fillText(`${f}`, x + 3, y + 10);
+  }
+
+  // Row label
+  ctx.fillStyle = anim.color;
+  ctx.font = 'bold 9px monospace';
+  ctx.fillText(anim.name, anim.frames * CELL + 4, anim.row * CELL + CELL / 2 + 3);
+});
+
+// ============================================================
+//  LAYOUT DIAGRAM
+// ============================================================
+const grid = document.getElementById('layoutGrid');
+grid.style.gridTemplateColumns = `repeat(${COLS}, 60px)`;
+grid.style.gridTemplateRows = `repeat(${ROWS}, 30px)`;
+
+animations.forEach(anim => {
+  for (let c = 0; c < COLS; c++) {
+    const cell = document.createElement('div');
+    cell.className = 'layout-cell';
+    if (c < anim.frames) {
+      cell.style.background = anim.color + '99';
+      cell.textContent = `${anim.name[0]}${c}`;
+    } else {
+      cell.style.background = '#222';
+      cell.style.color = '#444';
+      cell.textContent = '—';
+    }
+    grid.appendChild(cell);
+  }
+});
+
+// Legend
+const legend = document.getElementById('legend');
+animations.forEach(anim => {
+  const item = document.createElement('div');
+  item.className = 'legend-item';
+  const swatch = document.createElement('div');
+  swatch.className = 'legend-swatch';
+  swatch.style.background = anim.color;
+  item.appendChild(swatch);
+  item.append(` Row ${anim.row}: ${anim.name} (${anim.frames} frames)`);
+  legend.appendChild(item);
+});
+
+// ============================================================
+//  ANIMATED PREVIEWS
+// ============================================================
+const previewContainer = document.getElementById('previews');
+
+animations.forEach(anim => {
+  const div = document.createElement('div');
+  div.className = 'animation-preview';
+
+  const h3 = document.createElement('h3');
+  h3.textContent = anim.name;
+  div.appendChild(h3);
+
+  const canvas = document.createElement('canvas');
+  canvas.className = 'anim-canvas';
+  canvas.width = CELL * 2;
+  canvas.height = CELL * 2;
+  div.appendChild(canvas);
+
+  const info = document.createElement('div');
+  info.className = 'frame-info';
+  div.appendChild(info);
+
+  previewContainer.appendChild(div);
+
+  // Animate
+  let frame = 0;
+  const pCtx = canvas.getContext('2d');
+
+  function animate() {
+    pCtx.clearRect(0, 0, CELL * 2, CELL * 2);
+    pCtx.fillStyle = '#111';
+    pCtx.fillRect(0, 0, CELL * 2, CELL * 2);
+
+    // Draw scaled-up version of the frame
+    pCtx.save();
+    pCtx.scale(2, 2);
+    drawCatFrame(CELL / 2, CELL / 2 + 4, anim, frame, anim.frames);
+    pCtx.restore();
+
+    info.textContent = `Frame ${frame + 1}/${anim.frames} @ ${anim.fps} fps`;
+    frame = (frame + 1) % anim.frames;
+  }
+
+  animate();
+  setInterval(animate, 1000 / anim.fps);
+});
+</script>
+
+</body>
+</html>

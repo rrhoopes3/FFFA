@@ -1,0 +1,778 @@
+{
+  "meta": {
+    "cellWidth": 64,
+    "cellHeight": 64,
+    "columns": 6,
+    "description": "Each unit has one sprite sheet PNG. Rows = animations, columns = frames. All frames are cellWidth x cellHeight. To extract frame n of animation row r: sx = n * cellWidth, sy = r * cellHeight."
+  },
+
+  "units": {
+    "alley_tabby_thug": {
+      "name": "Alley Tabby Thug",
+      "role": "Tank",
+      "sheet": "sheets/alley_tabby_thug_sheet.png",
+      "portrait": "alley_tabby_thug.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "block":  { "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "taunt":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "alley_dumpster_king": {
+      "name": "Alley Dumpster King",
+      "role": "Boss",
+      "sheet": "sheets/alley_dumpster_king_sheet.png",
+      "portrait": "alley_dumpster_king.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "slam":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "summon": { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "alley_feral_boss": {
+      "name": "Alley Feral Boss",
+      "role": "Berserker",
+      "sheet": "sheets/alley_feral_boss_sheet.png",
+      "portrait": "alley_feral_boss.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 14, "loop": false },
+        "rage":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "howl":   { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "alley_ginger_rogue": {
+      "name": "Alley Ginger Rogue",
+      "role": "Rogue",
+      "sheet": "sheets/alley_ginger_rogue_sheet.png",
+      "portrait": "alley_ginger_rogue.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 5,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 10, "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 14, "loop": false },
+        "dash":   { "row": 3, "frames": 4, "fps": 12, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "stealth":{ "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "alley_street_yowler": {
+      "name": "Alley Street Yowler",
+      "role": "Brawler",
+      "sheet": "sheets/alley_street_yowler_sheet.png",
+      "portrait": "alley_street_yowler.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "yowl":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "taunt":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "alley_tuxedo_con": {
+      "name": "Alley Tuxedo Con",
+      "role": "Support",
+      "sheet": "sheets/alley_tuxedo_con_sheet.png",
+      "portrait": "alley_tuxedo_con.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "trick":  { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "shuffle": { "row": 6, "frames": 6, "fps": 8, "loop": false }
+      }
+    },
+
+    "persian_pampered": {
+      "name": "Pampered Prince",
+      "role": "Tank",
+      "sheet": "sheets/persian_pampered_sheet.png",
+      "portrait": "persian_pampered.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "preen":  { "row": 3, "frames": 5, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "hiss":   { "row": 6, "frames": 4, "fps": 8,  "loop": false }
+      }
+    },
+
+    "persian_princess": {
+      "name": "Persian Princess",
+      "role": "Tank",
+      "sheet": "sheets/persian_princess_sheet.png",
+      "portrait": "persian_princess.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "shield": { "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "charm":  { "row": 6, "frames": 5, "fps": 8,  "loop": false }
+      }
+    },
+
+    "persian_groomer": {
+      "name": "Royal Groomer",
+      "role": "Ranged",
+      "sheet": "sheets/persian_groomer_sheet.png",
+      "portrait": "persian_groomer.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "groom":  { "row": 3, "frames": 5, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "heal":   { "row": 6, "frames": 5, "fps": 8,  "loop": false }
+      }
+    },
+
+    "persian_snob": {
+      "name": "Aristocat Snob",
+      "role": "Tank",
+      "sheet": "sheets/persian_snob_sheet.png",
+      "portrait": "persian_snob.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "block":  { "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "sneer":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "persian_himalayan": {
+      "name": "Himalayan Heir",
+      "role": "Ranged",
+      "sheet": "sheets/persian_himalayan_sheet.png",
+      "portrait": "persian_himalayan.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "cast":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "meditate": { "row": 6, "frames": 4, "fps": 4, "loop": false }
+      }
+    },
+
+    "persian_emperor": {
+      "name": "Persian Emperor",
+      "role": "Tank",
+      "sheet": "sheets/persian_emperor_sheet.png",
+      "portrait": "persian_emperor.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "slam":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "decree": { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "siamese_screamer": {
+      "name": "Siamese Screamer",
+      "role": "Ranged",
+      "sheet": "sheets/siamese_screamer_sheet.png",
+      "portrait": "siamese_screamer.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 5,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 10, "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "yowl":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "screech": { "row": 6, "frames": 4, "fps": 8, "loop": false }
+      }
+    },
+
+    "siamese_chatterbox": {
+      "name": "Chatterbox",
+      "role": "Ranged",
+      "sheet": "sheets/siamese_chatterbox_sheet.png",
+      "portrait": "siamese_chatterbox.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 5,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 10, "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "chatter": { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "taunt":  { "row": 6, "frames": 4, "fps": 8,  "loop": false }
+      }
+    },
+
+    "siamese_soprano": {
+      "name": "Soprano Singer",
+      "role": "Ranged",
+      "sheet": "sheets/siamese_soprano_sheet.png",
+      "portrait": "siamese_soprano.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "sing":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "aria":   { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "siamese_gossip": {
+      "name": "Gossip Queen",
+      "role": "Ranged",
+      "sheet": "sheets/siamese_gossip_sheet.png",
+      "portrait": "siamese_gossip.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "whisper": { "row": 3, "frames": 5, "fps": 8, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "gossip": { "row": 6, "frames": 5, "fps": 8,  "loop": false }
+      }
+    },
+
+    "siamese_opera": {
+      "name": "Opera Diva",
+      "role": "Ranged",
+      "sheet": "sheets/siamese_opera_sheet.png",
+      "portrait": "siamese_opera.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "sing":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "howl":   { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "siamese_conductor": {
+      "name": "Choir Conductor",
+      "role": "Ranged",
+      "sheet": "sheets/siamese_conductor_sheet.png",
+      "portrait": "siamese_conductor.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "conduct": { "row": 3, "frames": 6, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "summon": { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "mainecoon_cub": {
+      "name": "Gentle Giant Cub",
+      "role": "Tank",
+      "sheet": "sheets/mainecoon_cub_sheet.png",
+      "portrait": "mainecoon_cub.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "block":  { "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "play":   { "row": 6, "frames": 5, "fps": 8,  "loop": false }
+      }
+    },
+
+    "mainecoon_guardian": {
+      "name": "Floofy Guardian",
+      "role": "Tank",
+      "sheet": "sheets/mainecoon_guardian_sheet.png",
+      "portrait": "mainecoon_guardian.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "block":  { "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "roar":   { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "mainecoon_titan": {
+      "name": "Maine Coon Titan",
+      "role": "Tank",
+      "sheet": "sheets/mainecoon_titan_sheet.png",
+      "portrait": "mainecoon_titan.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "slam":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "howl":   { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "mainecoon_brawler": {
+      "name": "Forest Brawler",
+      "role": "Melee",
+      "sheet": "sheets/mainecoon_brawler_sheet.png",
+      "portrait": "mainecoon_brawler.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "rage":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "taunt":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "mainecoon_elder": {
+      "name": "Clan Elder",
+      "role": "Ranged",
+      "sheet": "sheets/mainecoon_elder_sheet.png",
+      "portrait": "mainecoon_elder.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "cast":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "summon": { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "mainecoon_alpha": {
+      "name": "Alpha Floof",
+      "role": "Tank",
+      "sheet": "sheets/mainecoon_alpha_sheet.png",
+      "portrait": "mainecoon_alpha.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "slam":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "howl":   { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "bengal_kitten": {
+      "name": "Wild Kitten",
+      "role": "Melee",
+      "sheet": "sheets/bengal_kitten_sheet.png",
+      "portrait": "bengal_kitten.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 5,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 10, "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 14, "loop": false },
+        "pounce": { "row": 3, "frames": 4, "fps": 12, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "play":   { "row": 6, "frames": 5, "fps": 8,  "loop": false }
+      }
+    },
+
+    "bengal_stalker": {
+      "name": "Bengal Stalker",
+      "role": "Ranged",
+      "sheet": "sheets/bengal_stalker_sheet.png",
+      "portrait": "bengal_stalker.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "stealth":{ "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "stalk":  { "row": 6, "frames": 5, "fps": 6,  "loop": false }
+      }
+    },
+
+    "bengal_hunter": {
+      "name": "Jungle Hunter",
+      "role": "Ranged",
+      "sheet": "sheets/bengal_hunter_sheet.png",
+      "portrait": "bengal_hunter.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "pounce": { "row": 3, "frames": 4, "fps": 12, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "howl":   { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "bengal_assassin": {
+      "name": "Shadow Assassin",
+      "role": "Melee",
+      "sheet": "sheets/bengal_assassin_sheet.png",
+      "portrait": "bengal_assassin.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 5,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 10, "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 14, "loop": false },
+        "dash":   { "row": 3, "frames": 4, "fps": 12, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "stealth":{ "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "bengal_pack_leader": {
+      "name": "Pack Leader",
+      "role": "Ranged",
+      "sheet": "sheets/bengal_pack_leader_sheet.png",
+      "portrait": "bengal_pack_leader.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "howl":   { "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "summon": { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "bengal_apex": {
+      "name": "Apex Predator",
+      "role": "Melee",
+      "sheet": "sheets/bengal_apex_sheet.png",
+      "portrait": "bengal_apex.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 14, "loop": false },
+        "rage":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "howl":   { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "sphynx_creeper": {
+      "name": "Creepy Creeper",
+      "role": "Melee",
+      "sheet": "sheets/sphynx_creeper_sheet.png",
+      "portrait": "sphynx_creeper.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 5,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 10, "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "creep":  { "row": 3, "frames": 5, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "stare":  { "row": 6, "frames": 4, "fps": 4,  "loop": false }
+      }
+    },
+
+    "sphynx_warmer": {
+      "name": "Heat Seeker",
+      "role": "Melee",
+      "sheet": "sheets/sphynx_warmer_sheet.png",
+      "portrait": "sphynx_warmer.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "hug":    { "row": 3, "frames": 5, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "shiver": { "row": 6, "frames": 4, "fps": 8,  "loop": false }
+      }
+    },
+
+    "sphynx_menace": {
+      "name": "Sphynx Menace",
+      "role": "Melee",
+      "sheet": "sheets/sphynx_menace_sheet.png",
+      "portrait": "sphynx_menace.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "rage":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "taunt":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "sphynx_cultist": {
+      "name": "Weird Cultist",
+      "role": "Ranged",
+      "sheet": "sheets/sphynx_cultist_sheet.png",
+      "portrait": "sphynx_cultist.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "ritual": { "row": 3, "frames": 6, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "summon": { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "sphynx_oracle": {
+      "name": "Naked Oracle",
+      "role": "Ranged",
+      "sheet": "sheets/sphynx_oracle_sheet.png",
+      "portrait": "sphynx_oracle.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "cast":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "vision": { "row": 6, "frames": 5, "fps": 6,  "loop": false }
+      }
+    },
+
+    "sphynx_overlord": {
+      "name": "Hairless Overlord",
+      "role": "Ranged",
+      "sheet": "sheets/sphynx_overlord_sheet.png",
+      "portrait": "sphynx_overlord.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "cast":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "summon": { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "scottish_lucky": {
+      "name": "Lucky Paws",
+      "role": "Melee",
+      "sheet": "sheets/scottish_lucky_sheet.png",
+      "portrait": "scottish_lucky.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "shuffle": { "row": 3, "frames": 5, "fps": 8, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "trick":  { "row": 6, "frames": 5, "fps": 8,  "loop": false }
+      }
+    },
+
+    "scottish_gambler": {
+      "name": "Scottish Gambler",
+      "role": "Melee",
+      "sheet": "sheets/scottish_gambler_sheet.png",
+      "portrait": "scottish_gambler.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "shuffle": { "row": 3, "frames": 6, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "taunt":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "scottish_dealer": {
+      "name": "Card Dealer",
+      "role": "Ranged",
+      "sheet": "sheets/scottish_dealer_sheet.png",
+      "portrait": "scottish_dealer.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "shuffle": { "row": 3, "frames": 6, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "trick":  { "row": 6, "frames": 5, "fps": 8,  "loop": false }
+      }
+    },
+
+    "scottish_bettor": {
+      "name": "High Roller",
+      "role": "Melee",
+      "sheet": "sheets/scottish_bettor_sheet.png",
+      "portrait": "scottish_bettor.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 4,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 8,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 12, "loop": false },
+        "block":  { "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "taunt":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "scottish_fortune": {
+      "name": "Fortune Teller",
+      "role": "Ranged",
+      "sheet": "sheets/scottish_fortune_sheet.png",
+      "portrait": "scottish_fortune.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "cast":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "vision": { "row": 6, "frames": 5, "fps": 6,  "loop": false }
+      }
+    },
+
+    "scottish_jackpot": {
+      "name": "Jackpot King",
+      "role": "Ranged",
+      "sheet": "sheets/scottish_jackpot_sheet.png",
+      "portrait": "scottish_jackpot.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "slam":   { "row": 3, "frames": 5, "fps": 10, "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "summon": { "row": 6, "frames": 6, "fps": 8,  "loop": false }
+      }
+    },
+
+    "ragdoll_faker": {
+      "name": "Ragdoll Faker",
+      "role": "Tank",
+      "sheet": "sheets/ragdoll_faker_sheet.png",
+      "portrait": "ragdoll_faker.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "flop":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "taunt":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "ragdoll_lazy": {
+      "name": "Lazy Loafer",
+      "role": "Tank",
+      "sheet": "sheets/ragdoll_lazy_sheet.png",
+      "portrait": "ragdoll_lazy.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 2,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 5,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 8,  "loop": false },
+        "flop":   { "row": 3, "frames": 5, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "yawn":   { "row": 6, "frames": 4, "fps": 4,  "loop": false }
+      }
+    },
+
+    "ragdoll_flopper": {
+      "name": "Master Flopper",
+      "role": "Tank",
+      "sheet": "sheets/ragdoll_flopper_sheet.png",
+      "portrait": "ragdoll_flopper.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "flop":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "block":  { "row": 6, "frames": 4, "fps": 6,  "loop": false }
+      }
+    },
+
+    "ragdoll_dreamer": {
+      "name": "Daydreamer",
+      "role": "Ranged",
+      "sheet": "sheets/ragdoll_dreamer_sheet.png",
+      "portrait": "ragdoll_dreamer.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "cast":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "sleep":  { "row": 6, "frames": 4, "fps": 3,  "loop": false }
+      }
+    },
+
+    "ragdoll_therapist": {
+      "name": "Cuddle Therapist",
+      "role": "Ranged",
+      "sheet": "sheets/ragdoll_therapist_sheet.png",
+      "portrait": "ragdoll_therapist.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 3,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 6,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "heal":   { "row": 3, "frames": 5, "fps": 8,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "hug":    { "row": 6, "frames": 5, "fps": 6,  "loop": false }
+      }
+    },
+
+    "ragdoll_zen": {
+      "name": "Zen Master",
+      "role": "Tank",
+      "sheet": "sheets/ragdoll_zen_sheet.png",
+      "portrait": "ragdoll_zen.png",
+      "animations": {
+        "idle":   { "row": 0, "frames": 4, "fps": 2,  "loop": true  },
+        "walk":   { "row": 1, "frames": 6, "fps": 5,  "loop": true  },
+        "attack": { "row": 2, "frames": 6, "fps": 10, "loop": false },
+        "block":  { "row": 3, "frames": 4, "fps": 6,  "loop": false },
+        "hurt":   { "row": 4, "frames": 3, "fps": 10, "loop": false },
+        "death":  { "row": 5, "frames": 5, "fps": 10, "loop": false },
+        "meditate": { "row": 6, "frames": 4, "fps": 3, "loop": false }
+      }
+    }
+  }
+}

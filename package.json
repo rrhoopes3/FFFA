@@ -1,0 +1,13 @@
+{
+  "name": "fffa-server",
+  "version": "1.0.0",
+  "description": "FFFA Auto-Battler WebSocket Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "canvas": "^3.2.1",
+    "ws": "^8.18.0"
+  }
+}
