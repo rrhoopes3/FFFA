@@ -1,0 +1,27 @@
+Fix the FFFA multiplayer combat bug where units appear idle (no movement/animations despite victor declared).
+
+Current code issues:
+- Sprite animations shared across same unit types (instanceId = combatUnit.id = unitKey string). Multiple tabby_thugs sync anims—looks wrong.
+- Move/action cooldowns high (600+/speed ms), uniform starts: first move ~500ms delay, looks idle.
+- No console errors; combatLoop runs (50ms ticks, findNearestEnemy, pathfinding).
+
+Edits needed:
+1. drawUnitSprite function: change instanceId = combatUnit ? combatUnit.id : (unitKey + '_board'); 
+   to instanceId = combatUnitRef ? combatUnitRef.hexKey : (explicitUnitId || unitKey) + '_board';
+
+2. In combatUnits build (handleMatchup or startCombat): 
+   actionCooldown: 800 / u.speed,
+   moveCooldown: 300 / u.speed,
+
+3. End startCombat(), after combatUnits.forEach push or build:
+   // Stagger for immediate flow
+   combatUnits.forEach((u, i) => {
+     u.lastActionTime = combatStartTime - i * 80;
+     u.lastMoveTime = combatStartTime - i * 40;
+   });
+
+Verify: server armies mirrored (armyB rows 7-row), isPlayer flipped if !youArePlayerA, enemies found.
+
+Test: node server.js & open localhost:3000, queue match, watch combat—units walk toward enemies, attack staggered.
+
+Commit msg: fix(combat): per-position sprite anims, faster/staggered ticks for responsive visuals

@@ -1,0 +1,3 @@
+FFFA server listening on http://localhost:3001
+WebSocket available at ws://localhost:3001
+Static files served from /home/vboxuser/.openclaw/FFFA/FFFA
