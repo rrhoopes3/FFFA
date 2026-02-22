@@ -31,7 +31,7 @@
     const maxHexByHeight = availH / 12.5;
 
     hexSize = Math.floor(Math.min(maxHexByWidth, maxHexByHeight));
-    hexSize = Math.max(28, Math.min(72, hexSize)); // Clamp min 28, max 72
+    hexSize = Math.max(32, Math.min(90, hexSize)); // Clamp min 32, max 90
     G.hexSize = hexSize;
 
     const h = hexSize * s3;
@@ -117,6 +117,34 @@
     vigGrad.addColorStop(1, 'rgba(0,0,0,0.25)');
     ctx.fillStyle = vigGrad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Edge fade — blend canvas edges into page background (#0d1117)
+    const edgeFade = 18;
+    const pageBg = '#0d1117';
+    // Top
+    var edgeGrad = ctx.createLinearGradient(0, 0, 0, edgeFade);
+    edgeGrad.addColorStop(0, pageBg);
+    edgeGrad.addColorStop(1, 'rgba(13,17,23,0)');
+    ctx.fillStyle = edgeGrad;
+    ctx.fillRect(0, 0, canvas.width, edgeFade);
+    // Bottom
+    edgeGrad = ctx.createLinearGradient(0, canvas.height - edgeFade, 0, canvas.height);
+    edgeGrad.addColorStop(0, 'rgba(13,17,23,0)');
+    edgeGrad.addColorStop(1, pageBg);
+    ctx.fillStyle = edgeGrad;
+    ctx.fillRect(0, canvas.height - edgeFade, canvas.width, edgeFade);
+    // Left
+    edgeGrad = ctx.createLinearGradient(0, 0, edgeFade, 0);
+    edgeGrad.addColorStop(0, pageBg);
+    edgeGrad.addColorStop(1, 'rgba(13,17,23,0)');
+    ctx.fillStyle = edgeGrad;
+    ctx.fillRect(0, 0, edgeFade, canvas.height);
+    // Right
+    edgeGrad = ctx.createLinearGradient(canvas.width - edgeFade, 0, canvas.width, 0);
+    edgeGrad.addColorStop(0, 'rgba(13,17,23,0)');
+    edgeGrad.addColorStop(1, pageBg);
+    ctx.fillStyle = edgeGrad;
+    ctx.fillRect(canvas.width - edgeFade, 0, edgeFade, canvas.height);
   }
 
   // ── Color helper ─────────────────────────────────────────────
@@ -244,7 +272,7 @@
 
     // Draw shadow
     ctx.beginPath();
-    ctx.arc(cx + 3, cy + 3, hexSize * 0.4, 0, Math.PI * 2);
+    ctx.arc(cx + 3, cy + 3, hexSize * 0.45, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
     ctx.fill();
 
@@ -339,12 +367,12 @@
       ctx.save();
       ctx.translate(swayX, swayY);
       ctx.scale(pulseScale, pulseScale);
-      ctx.drawImage(img, cx - hexSize * 0.35, cy - hexSize * 0.35, hexSize * 0.7, hexSize * 0.7);
+      ctx.drawImage(img, cx - hexSize * 0.425, cy - hexSize * 0.425, hexSize * 0.85, hexSize * 0.85);
       ctx.restore();
     } else {
       // Fallback to emoji if image not found
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 36px Arial';
+      ctx.font = `bold ${Math.max(28, hexSize * 0.7)}px Arial`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(unit.icon, cx, cy);
@@ -359,8 +387,7 @@
       ctx.save();
       ctx.translate(swayX, swayY);
       ctx.scale(pulseScale, pulseScale);
-      var scale = hexSize * 0.7 / 64;
-      ctx.drawImage(unitImages[unitKey], cx - hexSize * 0.35, cy - hexSize * 0.35, hexSize * 0.7, hexSize * 0.7);
+      ctx.drawImage(unitImages[unitKey], cx - hexSize * 0.425, cy - hexSize * 0.425, hexSize * 0.85, hexSize * 0.85);
       ctx.restore();
     } else {
       // Fallback to emoji with glow
@@ -377,18 +404,18 @@
     ctx.strokeStyle = borderColors[stars];
     ctx.lineWidth = stars === 1 ? 2 : stars === 2 ? 3 : 4;
     ctx.beginPath();
-    ctx.arc(cx, cy, hexSize * 0.4, 0, Math.PI * 2);
+    ctx.arc(cx, cy, hexSize * 0.45, 0, Math.PI * 2);
     ctx.stroke();
 
     // Draw star indicators below unit
-    ctx.font = '10px Arial';
+    ctx.font = `${Math.max(10, hexSize * 0.22)}px Arial`;
     ctx.fillStyle = stars === 1 ? '#ffd700' : stars === 2 ? '#4af' : '#f4a';
-    ctx.fillText('\u2B50'.repeat(stars), cx, cy + 28);
+    ctx.fillText('\u2B50'.repeat(stars), cx, cy + hexSize * 0.6);
 
     // Draw faction label
-    ctx.font = '10px Arial';
+    ctx.font = `${Math.max(9, hexSize * 0.2)}px Arial`;
     ctx.fillStyle = '#aaa';
-    ctx.fillText(unit.faction, cx, cy + 40);
+    ctx.fillText(unit.faction, cx, cy + hexSize * 0.8);
   }
 
   // ── Simple hex (non-shadowed) ────────────────────────────────

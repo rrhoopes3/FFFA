@@ -37,7 +37,7 @@
 
   window.FFFA = {
     // Version
-    VERSION: '0.3.0.0',
+    VERSION: '0.4.0.0',
 
     // Constants (read-only by convention)
     STATUS,
@@ -86,7 +86,7 @@
     // Canvas/Board (set during init)
     canvas: null,
     ctx: null,
-    hexSize: 42,
+    hexSize: 48,
     origin: { x: 0, y: 0 },
     boardHexes: [],
     backgroundTime: 0,

@@ -274,22 +274,24 @@
         // HP bar with 3D effect (scaled to hex size)
         const barWidth = G.hexSize * 0.85;
         const barHalfWidth = barWidth / 2;
+        const hpBarH = Math.max(4, G.hexSize * 0.08);
+        const manaBarH = Math.max(3, G.hexSize * 0.06);
         G.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        G.ctx.fillRect(p.x - barHalfWidth - 2, p.y - G.hexSize * 0.82, barWidth + 4, 6);
+        G.ctx.fillRect(p.x - barHalfWidth - 2, p.y - G.hexSize * 0.82, barWidth + 4, hpBarH + 2);
         G.ctx.fillStyle = '#333';
-        G.ctx.fillRect(p.x - barHalfWidth, p.y - G.hexSize * 0.78, barWidth, 4);
+        G.ctx.fillRect(p.x - barHalfWidth, p.y - G.hexSize * 0.78, barWidth, hpBarH);
         const hpPct = Math.max(0, unit.hp / unit.maxHp);
-        G.ctx.fillStyle = hpPct > 0.5 ? 'rgba(0, 255, 0, 0.8)' : hpPct > 0.25 ? 'rgba(255, 255, 0, 0.8)' : 'rgba(255, 0, 0, 0.8)';
-        G.ctx.fillRect(p.x - barHalfWidth, p.y - G.hexSize * 0.78, barWidth * hpPct, 4);
+        G.ctx.fillStyle = hpPct > 0.5 ? 'rgba(63, 185, 80, 0.9)' : hpPct > 0.25 ? 'rgba(255, 200, 0, 0.9)' : 'rgba(248, 81, 73, 0.9)';
+        G.ctx.fillRect(p.x - barHalfWidth, p.y - G.hexSize * 0.78, barWidth * hpPct, hpBarH);
 
         // Mana bar with 3D effect
         G.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        G.ctx.fillRect(p.x - barHalfWidth - 2, p.y - G.hexSize * 0.68, barWidth + 4, 5);
+        G.ctx.fillRect(p.x - barHalfWidth - 2, p.y - G.hexSize * 0.68, barWidth + 4, manaBarH + 2);
         G.ctx.fillStyle = '#003';
-        G.ctx.fillRect(p.x - barHalfWidth, p.y - G.hexSize * 0.64, barWidth, 3);
+        G.ctx.fillRect(p.x - barHalfWidth, p.y - G.hexSize * 0.64, barWidth, manaBarH);
         const manaPct = unit.mana / unit.maxMana;
-        G.ctx.fillStyle = 'rgba(100, 100, 255, 0.8)';
-        G.ctx.fillRect(p.x - barHalfWidth, p.y - G.hexSize * 0.64, barWidth * manaPct, 3);
+        G.ctx.fillStyle = 'rgba(88, 166, 255, 0.9)';
+        G.ctx.fillRect(p.x - barHalfWidth, p.y - G.hexSize * 0.64, barWidth * manaPct, manaBarH);
       });
 
       // Draw visual effects
@@ -303,7 +305,7 @@
         if (fx.type === 'damage' || fx.type === 'heal') {
           G.ctx.globalAlpha = alpha;
           G.ctx.fillStyle = fx.color;
-          G.ctx.font = 'bold 16px Arial';
+          G.ctx.font = `bold ${Math.max(14, Math.round(G.hexSize * 0.35))}px Arial`;
           G.ctx.textAlign = 'center';
 
           // Add glow effect to damage numbers
@@ -518,7 +520,7 @@
       div.dataset.shopIndex = shopIdx; // Track actual shop position
       const hasPortrait = G.unitImages && G.unitImages[id];
       const iconHtml = hasPortrait
-        ? `<img src="portraits/${id}.png" alt="${u.name}" style="width:56px;height:56px;border-radius:4px;object-fit:cover;">`
+        ? `<img src="portraits/${id}.png" alt="${u.name}" style="width:72px;height:72px;border-radius:6px;object-fit:cover;border:1px solid #484f58;">`
         : u.icon;
       div.innerHTML = `
         <div class="unit-icon">${iconHtml}</div>
@@ -611,7 +613,7 @@
         const starText = '\u2B50'.repeat(unit.stars);
         const hasPortrait = G.unitImages && G.unitImages[unit.id];
         const iconHtml = hasPortrait
-          ? `<img src="portraits/${unit.id}.png" alt="${data.name}" style="width:52px;height:52px;border-radius:4px;object-fit:cover;">`
+          ? `<img src="portraits/${unit.id}.png" alt="${data.name}" style="width:60px;height:60px;border-radius:6px;object-fit:cover;">`
           : `<span class="bench-unit">${data.icon}</span>`;
         slot.innerHTML = `
           ${iconHtml}
@@ -619,7 +621,7 @@
           <span class="bench-unit-cost">${data.cost}g</span>
         `;
       } else {
-        slot.style.borderColor = '#999';
+        slot.style.borderColor = '';
       }
     });
   }
