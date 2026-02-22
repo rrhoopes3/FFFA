@@ -535,6 +535,15 @@
         e.dataTransfer.setData('text/plain', id);
         window.TooltipSystem.hideTooltip();
       });
+      // Enable mouse drag-to-board (custom drag system)
+      div.addEventListener('mousedown', e => {
+        if (G.draggedUnit || G.combatState !== 'idle') return;
+        wasDragged = true;
+        G.draggedUnit = { fromShop: true, id, cost: u.cost, shopIndex: shopIdx };
+        document.getElementById('sell-zone').classList.add('active');
+        window.TooltipSystem.hideTooltip();
+        window.RenderSystem.showDragGhost(id, e.clientX, e.clientY);
+      });
       div.addEventListener('click', e => {
         if (wasDragged) { wasDragged = false; return; }
         if (G.combatState !== 'idle') return;
