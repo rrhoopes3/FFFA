@@ -514,7 +514,7 @@
       const synergy = factionSynergies[u.faction];
       const div = document.createElement('div');
       div.className = 'unit';
-      div.draggable = true;
+      div.draggable = false;
       div.style.borderColor = synergy?.color || '#777';
       div.style.setProperty('--faction-color', synergy?.color || 'rgba(70,70,110,0.5)');
       div.dataset.shopIndex = shopIdx; // Track actual shop position
@@ -528,24 +528,8 @@
         <div class="unit-cost">${u.cost}g</div>
         <div class="unit-faction" style="color: ${synergy?.color || '#aaa'}">${synergy?.icon || ''} ${u.faction}</div>
       `;
-      let wasDragged = false;
-      div.addEventListener('dragstart', e => {
-        wasDragged = true;
-        G.draggedUnit = { fromShop: true, id, cost: u.cost, shopIndex: shopIdx };
-        e.dataTransfer.setData('text/plain', id);
-        window.TooltipSystem.hideTooltip();
-      });
-      // Enable mouse drag-to-board (custom drag system)
-      div.addEventListener('mousedown', e => {
-        if (G.draggedUnit || G.combatState !== 'idle') return;
-        wasDragged = true;
-        G.draggedUnit = { fromShop: true, id, cost: u.cost, shopIndex: shopIdx };
-        document.getElementById('sell-zone').classList.add('active');
-        window.TooltipSystem.hideTooltip();
-        window.RenderSystem.showDragGhost(id, e.clientX, e.clientY);
-      });
+      div.addEventListener('dragstart', e => e.preventDefault());
       div.addEventListener('click', e => {
-        if (wasDragged) { wasDragged = false; return; }
         if (G.combatState !== 'idle') return;
         window.TooltipSystem.hideTooltip();
         // Click-to-buy: purchase unit to bench
@@ -611,6 +595,7 @@
     slots.forEach((slot, index) => {
       const unit = G.bench[index];
       slot.innerHTML = '';
+      slot.style.opacity = '1';
       slot.classList.remove('occupied');
       slot.classList.remove('drag-over');
 

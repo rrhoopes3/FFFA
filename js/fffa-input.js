@@ -392,7 +392,9 @@
         const rect = G.canvas.getBoundingClientRect();
         if (e.clientX >= rect.left && e.clientX <= rect.right &&
             e.clientY >= rect.top && e.clientY <= rect.bottom) {
-          const raw = window.HexBoard.pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+          const scaleX = G.canvas.width / rect.width;
+          const scaleY = G.canvas.height / rect.height;
+          const raw = window.HexBoard.pixelToHex((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
           const hex = window.HexBoard.getNearestHex(raw);
 
           if (hex && G.playerRows.includes(hex.row)) {
@@ -529,11 +531,19 @@
       }
     });
 
-    // --- Global mouseup cleanup for drag ghost ---
+    // --- Global mouseup cleanup for drag ghost + stale drag state ---
     document.addEventListener('mouseup', () => {
       window.RenderSystem.removeDragGhost();
       G.swapTargetInfo = null;
       document.querySelectorAll('.bench-slot').forEach(s => s.classList.remove('drag-over', 'drag-over-swap'));
+      // Clean up stale drag state (e.g. drag started from shop but not dropped on board)
+      if (G.draggedUnit) {
+        G.draggedUnit = null;
+        G.highlightHex = null;
+        G.canvas.style.cursor = 'default';
+        document.getElementById('sell-zone').classList.remove('active');
+        window.RenderSystem.renderBoard();
+      }
     });
 
     // --- Escape key cancels any drag in progress ---
@@ -559,7 +569,9 @@
     G.canvas.addEventListener('mousedown', e => {
       if (G.draggedUnit || G.combatState !== 'idle') return;
       const rect = G.canvas.getBoundingClientRect();
-      const raw = window.HexBoard.pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+      const scaleX = G.canvas.width / rect.width;
+      const scaleY = G.canvas.height / rect.height;
+      const raw = window.HexBoard.pixelToHex((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
       const hex = window.HexBoard.getNearestHex(raw);
       if (hex && G.playerRows.includes(hex.row)) {
         const key = window.HexBoard.getHexKey(hex);
@@ -583,7 +595,9 @@
     // --- Canvas mousemove ---
     G.canvas.addEventListener('mousemove', e => {
       const rect = G.canvas.getBoundingClientRect();
-      const raw = window.HexBoard.pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
+      const scaleX = G.canvas.width / rect.width;
+      const scaleY = G.canvas.height / rect.height;
+      const raw = window.HexBoard.pixelToHex((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
       const hex = window.HexBoard.getNearestHex(raw);
       if (G.draggedUnit) {
         const isPlayerArea = hex && G.playerRows.includes(hex.row);
@@ -642,56 +656,88 @@
       window.RenderSystem.renderBoard();
     });
 
-    // --- Canvas mouseup ---
+    // --- Canvas mouseup (handles ALL drag types: fromBoard, fromShop, fromBench) ---
     G.canvas.addEventListener('mouseup', e => {
-      if (!G.draggedUnit || !G.draggedUnit.fromBoard) return;
+      if (!G.draggedUnit) return;
 
+      const rect = G.canvas.getBoundingClientRect();
+      const scaleX = G.canvas.width / rect.width;
+      const scaleY = G.canvas.height / rect.height;
+      const raw = window.HexBoard.pixelToHex((e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY);
+      const hex = window.HexBoard.getNearestHex(raw);
       const sellZone = document.getElementById('sell-zone');
       const sellRect = sellZone.getBoundingClientRect();
+      const isOnSellZone = sellZone.classList.contains('active') &&
+        e.clientX >= sellRect.left && e.clientX <= sellRect.right &&
+        e.clientY >= sellRect.top && e.clientY <= sellRect.bottom;
 
-      if (window.NetworkManager.isOnline) {
-        // === ONLINE MODE: send actions to server ===
-        // Check if dropped on sell zone
-        if (sellZone.classList.contains('active') &&
-            e.clientX >= sellRect.left && e.clientX <= sellRect.right &&
-            e.clientY >= sellRect.top && e.clientY <= sellRect.bottom) {
-          window.NetworkManager.send({ type: 'sell_board', hexKey: G.draggedUnit.oldKey });
-          sellZone.classList.remove('active');
-        } else {
-          // Check if dropped on bench
-          let droppedOnBench = false;
-          const benchSlots = document.querySelectorAll('.bench-slot');
-          benchSlots.forEach((slot, index) => {
-            const slotRect = slot.getBoundingClientRect();
-            if (e.clientX >= slotRect.left && e.clientX <= slotRect.right &&
-                e.clientY >= slotRect.top && e.clientY <= slotRect.bottom) {
-              droppedOnBench = true;
-              window.NetworkManager.send({ type: 'board_to_bench', hexKey: G.draggedUnit.oldKey, benchIndex: index });
-            }
-          });
-
-          if (!droppedOnBench) {
-            const rect = G.canvas.getBoundingClientRect();
-            const raw = window.HexBoard.pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
-            const hex = window.HexBoard.getNearestHex(raw);
-            if (hex && G.playerRows.includes(hex.row)) {
-              const newKey = window.HexBoard.getHexKey(hex);
-              if (newKey !== G.draggedUnit.oldKey) {
-                window.NetworkManager.send({ type: 'move', fromHex: G.draggedUnit.oldKey, toHex: newKey });
+      // --- SHOP → BOARD drop ---
+      if (G.draggedUnit.fromShop) {
+        if (hex && G.playerRows.includes(hex.row)) {
+          const key = window.HexBoard.getHexKey(hex);
+          if (!G.playerBoard[key] && window.RenderSystem.canPlaceUnit()) {
+            if (window.NetworkManager.isOnline) {
+              const shopIdx = G.draggedUnit.shopIndex !== undefined ? G.draggedUnit.shopIndex : G.shopUnits.indexOf(G.draggedUnit.id);
+              if (shopIdx > -1) window.NetworkManager.send({ type: 'buy', shopIndex: shopIdx });
+            } else if (G.gold >= G.draggedUnit.cost) {
+              if (window.MergeSystem.tryAddUnit(G.draggedUnit.id)) {
+                G.gold -= G.draggedUnit.cost;
+                // Move from bench to the target board hex
+                const benchIdx = G.bench.findIndex(b => b && b.id === G.draggedUnit.id);
+                if (benchIdx !== -1) {
+                  G.playerBoard[key] = G.bench[benchIdx];
+                  G.bench[benchIdx] = null;
+                  const matches = window.MergeSystem.checkForMerge(G.draggedUnit.id, G.playerBoard[key].stars);
+                  if (matches) window.MergeSystem.performMerge(matches, G.draggedUnit.id, G.playerBoard[key].stars);
+                }
+                const sIdx = G.draggedUnit.shopIndex !== undefined ? G.draggedUnit.shopIndex : G.shopUnits.indexOf(G.draggedUnit.id);
+                if (sIdx > -1) G.shopUnits[sIdx] = G.rollShopUnit();
+                window.RenderSystem.renderShop();
+                if (window.GameState.mode === 'multiplayer') {
+                  const human = window.GameState.getHumanPlayer();
+                  human.gold = G.gold; human.bench = [...G.bench]; human.shop = [...G.shopUnits];
+                }
               }
             }
           }
-          sellZone.classList.remove('active');
         }
-      } else {
-        // === OFFLINE MODE: original local logic ===
-        // Check if dropped on sell zone
-        if (sellZone.classList.contains('active') &&
-            e.clientX >= sellRect.left && e.clientX <= sellRect.right &&
-            e.clientY >= sellRect.top && e.clientY <= sellRect.bottom) {
-          const sellValue = getSellValue(G.draggedUnit.cost, G.draggedUnit.stars);
-          G.gold += sellValue;
-          delete G.playerBoard[G.draggedUnit.oldKey];
+      }
+
+      // --- BENCH → BOARD drop ---
+      else if (G.draggedUnit.fromBench) {
+        if (hex && G.playerRows.includes(hex.row)) {
+          const key = window.HexBoard.getHexKey(hex);
+          const targetUnit = G.playerBoard[key];
+          if (window.NetworkManager.isOnline) {
+            window.NetworkManager.send({ type: 'bench_to_board', benchIndex: G.draggedUnit.slotIndex, hexKey: key });
+          } else {
+            if (!targetUnit && window.RenderSystem.canPlaceUnit()) {
+              // Place bench unit on empty board hex
+              G.playerBoard[key] = { id: G.draggedUnit.id, stars: G.draggedUnit.stars };
+              G.bench[G.draggedUnit.slotIndex] = null;
+              const matches = window.MergeSystem.checkForMerge(G.draggedUnit.id, G.draggedUnit.stars);
+              if (matches) window.MergeSystem.performMerge(matches, G.draggedUnit.id, G.draggedUnit.stars);
+            } else if (targetUnit) {
+              // Swap bench unit with board unit
+              G.playerBoard[key] = { id: G.draggedUnit.id, stars: G.draggedUnit.stars };
+              G.bench[G.draggedUnit.slotIndex] = { id: targetUnit.id, stars: targetUnit.stars };
+              const matches = window.MergeSystem.checkForMerge(G.draggedUnit.id, G.draggedUnit.stars);
+              if (matches) window.MergeSystem.performMerge(matches, G.draggedUnit.id, G.draggedUnit.stars);
+            }
+          }
+        }
+      }
+
+      // --- BOARD → BOARD / SELL / BENCH drop ---
+      else if (G.draggedUnit.fromBoard) {
+        if (isOnSellZone) {
+          if (window.NetworkManager.isOnline) {
+            window.NetworkManager.send({ type: 'sell_board', hexKey: G.draggedUnit.oldKey });
+          } else {
+            const sellValue = getSellValue(G.draggedUnit.cost, G.draggedUnit.stars);
+            G.gold += sellValue;
+            delete G.playerBoard[G.draggedUnit.oldKey];
+          }
           sellZone.classList.remove('active');
         } else {
           // Check if dropped on bench
@@ -702,46 +748,41 @@
             if (e.clientX >= slotRect.left && e.clientX <= slotRect.right &&
                 e.clientY >= slotRect.top && e.clientY <= slotRect.bottom) {
               droppedOnBench = true;
-              const benchUnit = G.bench[index];
-
-              if (benchUnit === null) {
-                G.bench[index] = { id: G.draggedUnit.id, stars: G.draggedUnit.stars };
-                delete G.playerBoard[G.draggedUnit.oldKey];
+              if (window.NetworkManager.isOnline) {
+                window.NetworkManager.send({ type: 'board_to_bench', hexKey: G.draggedUnit.oldKey, benchIndex: index });
               } else {
-                G.bench[index] = { id: G.draggedUnit.id, stars: G.draggedUnit.stars };
-                G.playerBoard[G.draggedUnit.oldKey] = { id: benchUnit.id, stars: benchUnit.stars };
-
-                const matches = window.MergeSystem.checkForMerge(benchUnit.id, benchUnit.stars);
-                if (matches) {
-                  window.MergeSystem.performMerge(matches, benchUnit.id, benchUnit.stars);
+                const benchUnit = G.bench[index];
+                if (benchUnit === null) {
+                  G.bench[index] = { id: G.draggedUnit.id, stars: G.draggedUnit.stars };
+                  delete G.playerBoard[G.draggedUnit.oldKey];
+                } else {
+                  G.bench[index] = { id: G.draggedUnit.id, stars: G.draggedUnit.stars };
+                  G.playerBoard[G.draggedUnit.oldKey] = { id: benchUnit.id, stars: benchUnit.stars };
+                  const matches = window.MergeSystem.checkForMerge(benchUnit.id, benchUnit.stars);
+                  if (matches) window.MergeSystem.performMerge(matches, benchUnit.id, benchUnit.stars);
                 }
               }
             }
           });
 
-          if (!droppedOnBench) {
-            const rect = G.canvas.getBoundingClientRect();
-            const raw = window.HexBoard.pixelToHex(e.clientX - rect.left, e.clientY - rect.top);
-            const hex = window.HexBoard.getNearestHex(raw);
-            if (hex && G.playerRows.includes(hex.row)) {
-              const newKey = window.HexBoard.getHexKey(hex);
-              if (newKey !== G.draggedUnit.oldKey) {
+          if (!droppedOnBench && hex && G.playerRows.includes(hex.row)) {
+            const newKey = window.HexBoard.getHexKey(hex);
+            if (newKey !== G.draggedUnit.oldKey) {
+              if (window.NetworkManager.isOnline) {
+                window.NetworkManager.send({ type: 'move', fromHex: G.draggedUnit.oldKey, toHex: newKey });
+              } else {
                 const targetUnit = G.playerBoard[newKey];
-
                 if (!targetUnit) {
                   delete G.playerBoard[G.draggedUnit.oldKey];
                   G.playerBoard[newKey] = { id: G.draggedUnit.id, stars: G.draggedUnit.stars };
                 } else {
-                  // Board-to-board swap -- animate the displaced unit
+                  // Board-to-board swap
                   window.RenderSystem.triggerSwapAnimation(targetUnit.id, targetUnit.stars, newKey, G.draggedUnit.oldKey);
                   G.playerBoard[newKey] = { id: G.draggedUnit.id, stars: G.draggedUnit.stars };
                   G.playerBoard[G.draggedUnit.oldKey] = { id: targetUnit.id, stars: targetUnit.stars };
                 }
-
                 const matches = window.MergeSystem.checkForMerge(G.draggedUnit.id, G.draggedUnit.stars);
-                if (matches) {
-                  window.MergeSystem.performMerge(matches, G.draggedUnit.id, G.draggedUnit.stars);
-                }
+                if (matches) window.MergeSystem.performMerge(matches, G.draggedUnit.id, G.draggedUnit.stars);
               }
             }
           }
@@ -749,6 +790,9 @@
         }
       }
 
+      // --- Cleanup ---
+      // Restore bench slot opacity if dragged from bench
+      document.querySelectorAll('.bench-slot').forEach(s => { s.style.opacity = '1'; });
       G.draggedUnit = null;
       G.highlightHex = null;
       G.swapTargetInfo = null;

@@ -4,7 +4,7 @@
     {
       "name": "fffa-server",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["app.js"],
+      "runtimeArgs": ["server.js"],
       "port": 3001
     }
   ]

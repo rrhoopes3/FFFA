@@ -17,12 +17,12 @@
     var origin = G.origin;
 
     const s3 = Math.sqrt(3);
-    const boardArea = document.getElementById('board-area');
+    const container = canvas.parentElement;
     const isMobile = window.innerWidth <= 768;
 
-    // Measure available space from board-area container
-    const availW = boardArea ? boardArea.clientWidth - 60 : 600; // padding for frame + overlays
-    const availH = boardArea ? boardArea.clientHeight - 40 : 500;
+    // Measure available space from parent container (board-and-bench)
+    const availW = container ? container.clientWidth - 20 : 600;
+    const availH = container ? container.clientHeight - 100 : 500; // leave room for bench
 
     // Calculate max hexSize that fits:
     // gridW = 7.5 * hexSize * sqrt(3) + hexSize = hexSize * (7.5*sqrt3 + 1)

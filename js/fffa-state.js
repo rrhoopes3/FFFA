@@ -37,7 +37,7 @@
 
   window.FFFA = {
     // Version
-    VERSION: '0.4.0.0',
+    VERSION: '0.4.2.0',
 
     // Constants (read-only by convention)
     STATUS,
