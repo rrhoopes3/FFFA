@@ -503,7 +503,7 @@
 
   // ========== SHOP RENDERING ==========
   function renderShop() {
-    const shopEl = document.getElementById('shop-section');
+    const shopEl = document.getElementById('shop') || document.getElementById('shop-section');
     shopEl.innerHTML = '';
     G.shopUnits.forEach((id, shopIdx) => {
       if (!id) return; // Skip empty/purchased shop slots
