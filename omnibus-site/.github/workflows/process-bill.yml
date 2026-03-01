@@ -16,7 +16,7 @@ on:
 jobs:
   process:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
 
     steps:
       - uses: actions/checkout@v4
@@ -44,9 +44,18 @@ jobs:
       - name: Generate AI summaries
         working-directory: omnibus-site
         env:
+          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'ollama' }}
+          # Ollama via Cloudflare Tunnel (free, local GPU)
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL || 'https://ollama.omnibusai.info' }}
+          OLLAMA_SMART_MODEL: ${{ vars.OLLAMA_SMART_MODEL || 'qwen2.5:32b-instruct-q4_K_M' }}
+          OLLAMA_FAST_MODEL: ${{ vars.OLLAMA_FAST_MODEL || 'qwen2.5:14b-instruct-q5_K_M' }}
+          OLLAMA_NUM_CTX: ${{ vars.OLLAMA_NUM_CTX || '32768' }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+          # Cloud fallbacks
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'claude' }}
+        timeout-minutes: 120
         run: |
           IFS=',' read -ra IDS <<< "${{ inputs.bill_ids }}"
           for id in "${IDS[@]}"; do
