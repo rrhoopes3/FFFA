@@ -2,12 +2,18 @@
  * ollama.js - Ollama local/remote AI provider
  *
  * Connects to Ollama's OpenAI-compatible API (localhost or remote via tunnel).
- * Supports Cloudflare Tunnel auth via CF-Access-Client-Id/Secret headers.
+ * Supports both Cloudflare Tunnel (CF-Access headers) and Tailscale (private mesh).
+ * Also supports Ollama's native API key auth (OLLAMA_API_KEY).
  *
- * Recommended models for RTX 3090 (24GB VRAM):
- *   Quality (divisions):  qwen2.5:32b-instruct-q4_K_M  (128K context, ~20GB)
- *   Fast (sections):      qwen2.5:14b-instruct-q5_K_M  (128K context, ~12GB)
- *   Fastest:              llama3.1:8b-instruct           (128K context, ~5GB)
+ * RTX 3090 (24GB VRAM) — realistic context limits:
+ *   VRAM = model weights + KV cache. KV cache grows with context length.
+ *   Run Ollama with: OLLAMA_FLASH_ATTENTION=1 OLLAMA_KV_CACHE_TYPE=q8_0
+ *
+ *   Model                    Weights   Max ctx (24GB)   Speed (gen)
+ *   qwen2.5:14b-q5_K_M      ~10 GB    32-64K           40-55 t/s
+ *   gemma3:27b-it-q4_K_M    ~20 GB    16-24K (q8 KV)   18-25 t/s
+ *   qwen2.5:32b-q4_K_M      ~22 GB    8-12K (q8 KV)    10-15 t/s
+ *   llama3.1:8b-instruct     ~5 GB     128K             80-112 t/s
  */
 
 const http = require('http');
@@ -16,16 +22,17 @@ const { AIProvider } = require('./base');
 
 const MODELS = {
   fast: process.env.OLLAMA_FAST_MODEL || 'qwen2.5:14b-instruct-q5_K_M',
-  smart: process.env.OLLAMA_SMART_MODEL || 'qwen2.5:32b-instruct-q4_K_M',
+  smart: process.env.OLLAMA_SMART_MODEL || 'gemma3:27b-it-q4_K_M',
 };
 
 class OllamaProvider extends AIProvider {
   constructor() {
     super('Ollama');
     this.baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    this.apiKey = process.env.OLLAMA_API_KEY;
     this.cfClientId = process.env.CF_ACCESS_CLIENT_ID;
     this.cfClientSecret = process.env.CF_ACCESS_CLIENT_SECRET;
-    this.numCtx = parseInt(process.env.OLLAMA_NUM_CTX || '32768', 10);
+    this.numCtx = parseInt(process.env.OLLAMA_NUM_CTX || '16384', 10);
   }
 
   get maxContext() {
@@ -70,7 +77,7 @@ class OllamaProvider extends AIProvider {
 
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer ollama', // Required but ignored by Ollama
+      'Authorization': `Bearer ${this.apiKey || 'ollama'}`,
     };
 
     // Cloudflare Access auth for remote tunnels

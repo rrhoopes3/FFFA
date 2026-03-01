@@ -41,18 +41,30 @@ jobs:
             node scripts/parse-bill.js "$id"
           done
 
+      # Tailscale: join private mesh to reach your home GPU (recommended)
+      # Skip if using Cloudflare Tunnel or cloud-only providers instead
+      - name: Connect to Tailscale
+        if: ${{ secrets.TS_OAUTH_CLIENT_ID != '' }}
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
       - name: Generate AI summaries
         working-directory: omnibus-site
         env:
           AI_PROVIDER: ${{ vars.AI_PROVIDER || 'ollama' }}
-          # Ollama via Cloudflare Tunnel (free, local GPU)
-          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL || 'https://ollama.omnibusai.info' }}
-          OLLAMA_SMART_MODEL: ${{ vars.OLLAMA_SMART_MODEL || 'qwen2.5:32b-instruct-q4_K_M' }}
+          # Ollama (local GPU via Tailscale or Cloudflare Tunnel)
+          OLLAMA_BASE_URL: ${{ secrets.OLLAMA_BASE_URL }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+          OLLAMA_SMART_MODEL: ${{ vars.OLLAMA_SMART_MODEL || 'gemma3:27b-it-q4_K_M' }}
           OLLAMA_FAST_MODEL: ${{ vars.OLLAMA_FAST_MODEL || 'qwen2.5:14b-instruct-q5_K_M' }}
-          OLLAMA_NUM_CTX: ${{ vars.OLLAMA_NUM_CTX || '32768' }}
+          OLLAMA_NUM_CTX: ${{ vars.OLLAMA_NUM_CTX || '16384' }}
+          # Cloudflare Access auth (if using CF Tunnel instead of Tailscale)
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
-          # Cloud fallbacks
+          # Cloud fallbacks (optional)
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         timeout-minutes: 120
