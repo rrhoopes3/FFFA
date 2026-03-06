@@ -135,6 +135,11 @@
         vx: (Math.random() - 0.5) * 10,
         vy: (Math.random() - 0.5) * 10 - 2,
         life: 1,
+        size: Math.random() * 3.2 + 1.8,
+        drag: 0.965,
+        gravity: 0.08,
+        lifeDecay: 0.05,
+        glow: color,
         color: color + Math.floor(Math.random()*128).toString(16).padStart(2,'0')
       });
     }
@@ -149,6 +154,10 @@
         vy: (Math.random() - 0.5) * 15,
         life: 1,
         size: Math.random() * 4 + 2,
+        drag: 0.955,
+        gravity: 0.05,
+        lifeDecay: 0.04,
+        glow: '#ff7744',
         color: '#ff4400'
       });
     }
@@ -161,6 +170,11 @@
         vx: (Math.random() - 0.5) * 12,
         vy: (Math.random() - 0.5) * 12 - 2,
         life: 1,
+        size: Math.random() * 3.8 + 2.4,
+        drag: 0.968,
+        gravity: 0.06,
+        lifeDecay: 0.045,
+        glow: color,
         color: color + Math.floor(Math.random()*128).toString(16).padStart(2,'0')
       });
     }
@@ -174,6 +188,11 @@
         vx: (Math.random() - 0.5) * 8,
         vy: (Math.random() - 0.5) * 8 - 2,
         life: 1,
+        size: Math.random() * 3 + 2,
+        drag: 0.97,
+        gravity: 0.04,
+        lifeDecay: 0.04,
+        glow: '#66ff99',
         color: '#0f0' + Math.floor(Math.random()*128).toString(16).padStart(2,'0')
       });
     }

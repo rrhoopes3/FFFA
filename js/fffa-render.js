@@ -38,10 +38,15 @@
 
     // Update and draw particles
     G.particles = G.particles.filter(part => {
+      part.size = part.size || 2.5;
+      part.drag = part.drag ?? 0.985;
+      part.gravity = part.gravity ?? 0.14;
+      part.lifeDecay = part.lifeDecay ?? 0.035;
       part.x += part.vx;
       part.y += part.vy;
-      part.vy += 0.2;  // Gravity
-      part.life -= 0.03;
+      part.vx *= part.drag;
+      part.vy = part.vy * part.drag + part.gravity;
+      part.life -= part.lifeDecay;
       return part.life > 0;
     });
 
@@ -130,11 +135,20 @@
 
     // Draw particles
     G.particles.forEach(part => {
+      const radius = Math.max(0.5, part.size * Math.max(0.35, part.life));
       G.ctx.save();
-      G.ctx.globalAlpha = part.life;
+      G.ctx.globalAlpha = Math.max(0, Math.min(1, part.life));
+      G.ctx.globalCompositeOperation = 'screen';
       G.ctx.fillStyle = part.color;
+      G.ctx.shadowColor = part.glow || part.color;
+      G.ctx.shadowBlur = part.glowBlur || 12;
       G.ctx.beginPath();
-      G.ctx.arc(part.x, part.y, part.size * part.life, 0, Math.PI * 2);
+      G.ctx.arc(part.x, part.y, radius, 0, Math.PI * 2);
+      G.ctx.fill();
+      G.ctx.globalAlpha *= 0.35;
+      G.ctx.shadowBlur = 0;
+      G.ctx.beginPath();
+      G.ctx.arc(part.x, part.y, radius * 1.9, 0, Math.PI * 2);
       G.ctx.fill();
       G.ctx.restore();
     });
@@ -305,8 +319,10 @@
         if (fx.type === 'damage' || fx.type === 'heal') {
           G.ctx.globalAlpha = alpha;
           G.ctx.fillStyle = fx.color;
-          G.ctx.font = `bold ${Math.max(14, Math.round(G.hexSize * 0.35))}px Arial`;
+          G.ctx.font = `700 ${Math.max(15, Math.round(G.hexSize * 0.36))}px Rajdhani`;
           G.ctx.textAlign = 'center';
+          G.ctx.strokeStyle = 'rgba(4, 10, 20, 0.88)';
+          G.ctx.lineWidth = 4;
 
           // Add glow effect to damage numbers
           if (fx.type === 'damage') {
@@ -316,12 +332,17 @@
             G.ctx.shadowColor = '#0f0';
             G.ctx.shadowBlur = 15;
           }
+          G.ctx.strokeText(fx.text, fx.x, fx.y - progress * 30);
           G.ctx.fillText(fx.text, fx.x, fx.y - progress * 30);
           G.ctx.shadowBlur = 0;
           G.ctx.globalAlpha = 1;
         } else if (fx.type === 'attackLine') {
           G.ctx.globalAlpha = alpha;
-          G.ctx.strokeStyle = fx.color;
+          const beamGrad = G.ctx.createLinearGradient(fx.x, fx.y, fx.x2, fx.y2);
+          beamGrad.addColorStop(0, 'rgba(255,255,255,0.15)');
+          beamGrad.addColorStop(0.3, fx.color);
+          beamGrad.addColorStop(1, 'rgba(255,255,255,0.75)');
+          G.ctx.strokeStyle = beamGrad;
           G.ctx.lineWidth = 4;
           G.ctx.beginPath();
           G.ctx.moveTo(fx.x, fx.y);
@@ -472,17 +493,40 @@
 
         G.ctx.globalAlpha = alpha;
 
-        // Dark banner background
-        G.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        G.ctx.fillRect(0, G.canvas.height / 2 - 40, G.canvas.width, 80);
+        const bannerWidth = Math.min(G.canvas.width * 0.76, 520);
+        const bannerHeight = 96;
+        const bannerX = (G.canvas.width - bannerWidth) / 2;
+        const bannerY = G.canvas.height / 2 - bannerHeight / 2;
+        const panelGrad = G.ctx.createLinearGradient(0, bannerY, 0, bannerY + bannerHeight);
+        panelGrad.addColorStop(0, 'rgba(12, 22, 40, 0.94)');
+        panelGrad.addColorStop(1, 'rgba(5, 11, 21, 0.96)');
+        G.ctx.fillStyle = panelGrad;
+        G.ctx.strokeStyle = 'rgba(255, 216, 134, 0.24)';
+        G.ctx.lineWidth = 2;
+        G.ctx.beginPath();
+        if (typeof G.ctx.roundRect === 'function') {
+          G.ctx.roundRect(bannerX, bannerY, bannerWidth, bannerHeight, 24);
+        } else {
+          G.ctx.rect(bannerX, bannerY, bannerWidth, bannerHeight);
+        }
+        G.ctx.fill();
+        G.ctx.stroke();
 
-        // Add glow effect to banner
+        G.ctx.strokeStyle = G.roundBanner.color || '#fff';
+        G.ctx.globalAlpha = alpha * 0.45;
+        G.ctx.lineWidth = 1.5;
+        G.ctx.beginPath();
+        G.ctx.moveTo(bannerX + 24, bannerY + 18);
+        G.ctx.lineTo(bannerX + bannerWidth - 24, bannerY + 18);
+        G.ctx.moveTo(bannerX + 24, bannerY + bannerHeight - 18);
+        G.ctx.lineTo(bannerX + bannerWidth - 24, bannerY + bannerHeight - 18);
+        G.ctx.stroke();
+        G.ctx.globalAlpha = alpha;
+
         G.ctx.shadowColor = G.roundBanner.color || '#fff';
-        G.ctx.shadowBlur = 12;
-
-        // Banner text
+        G.ctx.shadowBlur = 18;
         G.ctx.fillStyle = G.roundBanner.color || '#fff';
-        G.ctx.font = 'bold 36px Arial';
+        G.ctx.font = '700 34px Rajdhani';
         G.ctx.textAlign = 'center';
         G.ctx.textBaseline = 'middle';
         G.ctx.fillText(G.roundBanner.text, G.canvas.width / 2, G.canvas.height / 2);
@@ -491,9 +535,9 @@
 
         // Subtext if present
         if (G.roundBanner.subtext) {
-          G.ctx.font = '18px Arial';
-          G.ctx.fillStyle = '#aaa';
-          G.ctx.fillText(G.roundBanner.subtext, G.canvas.width / 2, G.canvas.height / 2 + 28);
+          G.ctx.font = '600 16px Rajdhani';
+          G.ctx.fillStyle = '#a8b8d8';
+          G.ctx.fillText(G.roundBanner.subtext, G.canvas.width / 2, G.canvas.height / 2 + 26);
         }
 
         G.ctx.globalAlpha = 1;
@@ -507,26 +551,47 @@
   function renderShop() {
     const shopEl = document.getElementById('shop') || document.getElementById('shop-section');
     shopEl.innerHTML = '';
+    const rarityGlow = {
+      1: '#7dc8ff',
+      2: '#72df97',
+      3: '#f1c35d',
+      4: '#ff8a65',
+      5: '#d997ff'
+    };
     G.shopUnits.forEach((id, shopIdx) => {
       if (!id) return; // Skip empty/purchased shop slots
       const u = unitsData[id];
       if (!u) return;
       const synergy = factionSynergies[u.faction];
       const div = document.createElement('div');
-      div.className = 'unit';
+      div.className = `unit unit-cost-${u.cost}`;
       div.draggable = false;
-      div.style.borderColor = synergy?.color || '#777';
       div.style.setProperty('--faction-color', synergy?.color || 'rgba(70,70,110,0.5)');
+      div.style.setProperty('--rarity-glow', rarityGlow[u.cost] || '#7dc8ff');
       div.dataset.shopIndex = shopIdx; // Track actual shop position
       const hasPortrait = G.unitImages && G.unitImages[id];
       const iconHtml = hasPortrait
-        ? `<img src="portraits/${id}.png" alt="${u.name}" style="width:72px;height:72px;border-radius:6px;object-fit:cover;border:1px solid #484f58;">`
+        ? `<img src="portraits/${id}.png" alt="${u.name}">`
         : u.icon;
       div.innerHTML = `
         <div class="unit-icon">${iconHtml}</div>
-        <div class="unit-name">${u.name}</div>
-        <div class="unit-cost">${u.cost}g</div>
-        <div class="unit-faction" style="color: ${synergy?.color || '#aaa'}">${synergy?.icon || ''} ${u.faction}</div>
+        <div class="unit-meta">
+          <div class="unit-topline">
+            <span class="unit-cost-chip">${u.cost}g</span>
+            <span class="unit-role">${u.role}</span>
+          </div>
+          <div class="unit-name">${u.name}</div>
+          <div class="unit-faction" style="color: ${synergy?.color || '#aaa'}">
+            <span class="unit-faction-icon">${synergy?.icon || ''}</span>
+            <span>${synergy?.name || u.faction}</span>
+          </div>
+          <div class="unit-stats">
+            <span>HP ${u.stats.hp}</span>
+            <span>ATK ${u.stats.attack}</span>
+            <span>RNG ${u.stats.range || 1}</span>
+          </div>
+          <div class="unit-ability">${u.ability?.name || 'Basic Attack'}</div>
+        </div>
       `;
       div.addEventListener('dragstart', e => e.preventDefault());
       div.addEventListener('click', e => {
@@ -603,12 +668,14 @@
         const data = unitsData[unit.id];
         slot.classList.add('occupied');
         slot.style.borderColor = data.color;
+        slot.style.setProperty('--bench-accent', data.color);
+        slot.title = data.name;
 
         const starText = '\u2B50'.repeat(unit.stars);
         const hasPortrait = G.unitImages && G.unitImages[unit.id];
         const iconHtml = hasPortrait
-          ? `<img src="portraits/${unit.id}.png" alt="${data.name}" style="width:60px;height:60px;border-radius:6px;object-fit:cover;">`
-          : `<span class="bench-unit">${data.icon}</span>`;
+          ? `<div class="bench-portrait"><img src="portraits/${unit.id}.png" alt="${data.name}"></div>`
+          : `<div class="bench-portrait"><span class="bench-unit">${data.icon}</span></div>`;
         slot.innerHTML = `
           ${iconHtml}
           <span class="bench-unit-stars">${starText}</span>
@@ -616,6 +683,8 @@
         `;
       } else {
         slot.style.borderColor = '';
+        slot.style.removeProperty('--bench-accent');
+        slot.title = '';
       }
     });
   }
@@ -719,6 +788,7 @@
     document.getElementById('gold').textContent = G.gold;
     document.getElementById('health').textContent = G.health;
     document.getElementById('level').textContent = G.playerLevel;
+    document.body.dataset.phase = G.combatState;
     const unitCapEl = document.getElementById('unitcap');
     unitCapEl.textContent = `${getUnitCount()}/${getMaxUnits()}`;
     // Color code: green if room, yellow if close, red if at cap
@@ -729,6 +799,28 @@
     document.getElementById('levelup').textContent = `LEVEL UP (${lvlCost}g)`;
     document.getElementById('levelup').disabled = G.gold < lvlCost || G.playerLevel >= 9;
     document.getElementById('fight').disabled = G.combatState !== 'idle';
+    const phaseDisplay = document.getElementById('phase-timer-display');
+    if (phaseDisplay) {
+      const phaseLabel = document.getElementById('phase-timer-label');
+      const phaseValue = document.getElementById('phase-timer-value');
+      phaseDisplay.dataset.phase = G.combatState;
+      if (G.combatState === 'combat') {
+        const playerAlive = G.combatUnits.filter(unit => unit.isPlayer && unit.hp > 0).length;
+        const enemyAlive = G.combatUnits.filter(unit => !unit.isPlayer && unit.hp > 0).length;
+        phaseLabel.textContent = 'Combat Live';
+        phaseValue.textContent = `${playerAlive} vs ${enemyAlive}`;
+      } else if (G.combatState === 'resolution') {
+        phaseLabel.textContent = 'Round Result';
+        phaseValue.textContent = G.roundBanner?.text || 'Resetting board';
+      } else {
+        phaseLabel.textContent = 'Strategy Phase';
+        phaseValue.textContent = `${getUnitCount()} deployed`;
+      }
+    }
+    const versionEl = document.getElementById('version');
+    if (versionEl) {
+      versionEl.textContent = `FFFA ${G.VERSION}`;
+    }
 
     // Sync human player state to GameState in multiplayer mode
     if (typeof window.GameState !== 'undefined' && window.GameState.mode === 'multiplayer') {

@@ -55,14 +55,20 @@
       if (data.count === 0) return;
       const div = document.createElement('div');
       div.className = `synergy-item ${data.activeBonus ? 'active' : 'inactive'}`;
+      div.style.setProperty('--trait-color', data.synergy.color || '#7dc8ff');
+      div.dataset.tier = String(data.activeThreshold || 0);
+      const nextThreshold = data.synergy.thresholds.find(t => t > data.count) || data.synergy.thresholds[data.synergy.thresholds.length - 1];
+      const progress = Math.max(12, Math.min(100, (data.count / Math.max(1, nextThreshold)) * 100));
       const thresholds = data.synergy.thresholds.map(t =>
         `<span class="threshold ${data.count >= t ? 'active' : 'inactive'}">${t}</span>`
       ).join('');
       div.innerHTML = `
-        <span class="synergy-icon">${data.synergy.icon}</span>
+        <div class="synergy-emblem"><span class="synergy-icon">${data.synergy.icon}</span></div>
         <div class="synergy-info">
           <div class="synergy-name" style="color: ${data.synergy.color}">${data.synergy.name}</div>
-          <div class="synergy-count">${thresholds} (${data.count})</div>
+          <div class="synergy-count">${data.count} active</div>
+          <div class="synergy-bar"><span style="width: ${progress}%"></span></div>
+          <div class="synergy-thresholds">${thresholds}</div>
           ${data.activeBonus ? `<div class="synergy-bonus">${data.activeBonus.description}</div>` : ''}
         </div>
       `;
@@ -70,7 +76,7 @@
     });
 
     if (list.children.length === 0) {
-      list.innerHTML = '<div style="text-align: center; color: #666; font-size: 12px; padding: 20px;">Place units to activate synergies!</div>';
+      list.innerHTML = '<div class="synergy-empty">Draft units to awaken faction bonuses.</div>';
     }
   }
 

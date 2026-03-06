@@ -168,56 +168,75 @@
     const sx = frame * G.SPRITE_CELL;
     const sy = row * G.SPRITE_CELL;
 
-    // Dest size -- fill the hex
-    const destSize = G.hexSize * 1.4;
+    // Dest size -- fill the hex with a little more presence
+    const destSize = G.hexSize * 1.5;
+    const teamColor = isPlayer ? '#64a8ff' : '#ff6c74';
+    const teamGlow = isPlayer ? 'rgba(100, 168, 255, 0.34)' : 'rgba(255, 108, 116, 0.34)';
+    const rarityColors = { 1: '#7dc8ff', 2: '#72df97', 3: '#f1c35d', 4: '#ff8a65', 5: '#d997ff' };
+    const glowColors = { 1: unit.color, 2: '#7dc8ff', 3: '#f4a' };
+    const rarityColor = rarityColors[unit.cost || 1] || '#7dc8ff';
+    const seed = unitKey.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    const bob = Math.sin(Date.now() / 260 + seed) * G.hexSize * 0.04;
+    const drawY = cy - G.hexSize * 0.08 + bob;
 
-    // Shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    // Shadow and pedestal
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.34)';
     ctx.beginPath();
-    ctx.ellipse(cx, cy + destSize * 0.4, destSize * 0.3, destSize * 0.15, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + destSize * 0.34, destSize * 0.32, destSize * 0.14, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Team base circle
-    const teamColor = isPlayer ? '#4488ff' : '#ff4444';
-    const teamGlow = isPlayer ? 'rgba(68, 136, 255, 0.6)' : 'rgba(255, 68, 68, 0.6)';
-    ctx.beginPath();
-    ctx.arc(cx, cy + destSize * 0.1, destSize * 0.45, 0, Math.PI * 2);
+    ctx.globalCompositeOperation = 'screen';
     ctx.fillStyle = teamGlow;
+    ctx.beginPath();
+    ctx.arc(cx, cy + destSize * 0.12, destSize * 0.48, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = rarityColor + '22';
+    ctx.beginPath();
+    ctx.arc(cx, cy + destSize * 0.08, destSize * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
     ctx.strokeStyle = teamColor;
     ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy + destSize * 0.12, destSize * 0.43, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Star glow
-    const glowColors = { 1: unit.color, 2: '#4af', 3: '#f4a' };
-    ctx.shadowColor = glowColors[stars] || unit.color;
-    ctx.shadowBlur = stars === 1 ? 10 : stars === 2 ? 20 : 30;
+    ctx.strokeStyle = rarityColor;
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy + destSize * 0.12, destSize * 0.34, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
 
     // Draw the sprite frame
+    ctx.shadowColor = glowColors[stars] || unit.color;
+    ctx.shadowBlur = stars === 1 ? 10 : stars === 2 ? 18 : 28;
     ctx.drawImage(
       sheet,
       sx, sy, G.SPRITE_CELL, G.SPRITE_CELL,
-      cx - destSize / 2, cy - destSize / 2, destSize, destSize
+      cx - destSize / 2, drawY - destSize / 2, destSize, destSize
     );
     ctx.shadowBlur = 0;
 
-    // Team arrow
+    // Team crest arrow
     ctx.fillStyle = teamColor;
     ctx.beginPath();
     if (isPlayer) {
-      ctx.moveTo(cx, cy - destSize * 0.55);
-      ctx.lineTo(cx - 6, cy - destSize * 0.45);
-      ctx.lineTo(cx + 6, cy - destSize * 0.45);
+      ctx.moveTo(cx, drawY - destSize * 0.54);
+      ctx.lineTo(cx - 7, drawY - destSize * 0.43);
+      ctx.lineTo(cx + 7, drawY - destSize * 0.43);
     } else {
-      ctx.moveTo(cx, cy - destSize * 0.45);
-      ctx.lineTo(cx - 6, cy - destSize * 0.55);
-      ctx.lineTo(cx + 6, cy - destSize * 0.55);
+      ctx.moveTo(cx, drawY - destSize * 0.43);
+      ctx.lineTo(cx - 7, drawY - destSize * 0.54);
+      ctx.lineTo(cx + 7, drawY - destSize * 0.54);
     }
     ctx.closePath();
     ctx.fill();
 
     // Stars
-    ctx.font = '12px Arial';
+    ctx.font = '700 12px Rajdhani';
     ctx.fillStyle = glowColors[stars] || unit.color;
     ctx.textAlign = 'center';
     ctx.fillText('\u2605'.repeat(stars), cx, cy + destSize * 0.5);

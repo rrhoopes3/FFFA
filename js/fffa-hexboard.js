@@ -62,17 +62,17 @@
 
     // Dark arena floor gradient
     const floorGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    floorGrad.addColorStop(0, '#0c1624');
-    floorGrad.addColorStop(0.3, '#101e30');
-    floorGrad.addColorStop(0.5, '#142636');
-    floorGrad.addColorStop(0.7, '#101e30');
-    floorGrad.addColorStop(1, '#080e18');
+    floorGrad.addColorStop(0, '#07111f');
+    floorGrad.addColorStop(0.26, '#0b1a2d');
+    floorGrad.addColorStop(0.55, '#102238');
+    floorGrad.addColorStop(0.78, '#0a1628');
+    floorGrad.addColorStop(1, '#050913');
     ctx.fillStyle = floorGrad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Subtle grid pattern for arena floor feel
     ctx.globalAlpha = 0.025;
-    ctx.strokeStyle = '#4a6a8a';
+    ctx.strokeStyle = '#6d84a8';
     ctx.lineWidth = 1;
     const spacing = hexSize * 0.6;
     for (let x = 0; x < canvas.width; x += spacing) {
@@ -83,14 +83,53 @@
     }
     ctx.globalAlpha = 1;
 
+    // Side light columns
+    const leftBeam = ctx.createLinearGradient(0, 0, canvas.width * 0.24, 0);
+    leftBeam.addColorStop(0, 'rgba(255, 128, 92, 0.08)');
+    leftBeam.addColorStop(1, 'rgba(255, 128, 92, 0)');
+    ctx.fillStyle = leftBeam;
+    ctx.fillRect(0, 0, canvas.width * 0.24, canvas.height);
+
+    const rightBeam = ctx.createLinearGradient(canvas.width, 0, canvas.width * 0.76, 0);
+    rightBeam.addColorStop(0, 'rgba(96, 173, 255, 0.1)');
+    rightBeam.addColorStop(1, 'rgba(96, 173, 255, 0)');
+    ctx.fillStyle = rightBeam;
+    ctx.fillRect(canvas.width * 0.76, 0, canvas.width * 0.24, canvas.height);
+
     // Center spotlight glow
     const cx = canvas.width / 2, cy = canvas.height / 2;
     const glowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, canvas.height * 0.6);
-    glowGrad.addColorStop(0, 'rgba(40,65,110,0.12)');
-    glowGrad.addColorStop(0.5, 'rgba(20,35,60,0.06)');
+    glowGrad.addColorStop(0, 'rgba(52, 86, 142, 0.14)');
+    glowGrad.addColorStop(0.42, 'rgba(18, 39, 68, 0.07)');
     glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glowGrad;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Arena ring
+    const dividerY = origin.y + hexSize * 1.5 * 3.5;
+    ctx.save();
+    ctx.translate(cx, dividerY);
+    ctx.scale(1, 0.72);
+    const arenaRadius = canvas.width * 0.33;
+    const arenaFill = ctx.createRadialGradient(0, 0, arenaRadius * 0.15, 0, 0, arenaRadius);
+    arenaFill.addColorStop(0, 'rgba(255, 214, 116, 0.08)');
+    arenaFill.addColorStop(0.45, 'rgba(42, 66, 104, 0.12)');
+    arenaFill.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = arenaFill;
+    ctx.beginPath();
+    ctx.arc(0, 0, arenaRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 216, 134, 0.18)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, arenaRadius * 0.92, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(125, 200, 255, 0.08)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, arenaRadius * 0.74, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
 
     // Subtle animated shimmer
     const shimmerX = cx + Math.sin(backgroundTime * 2) * canvas.width * 0.15;
@@ -102,14 +141,23 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Divider line between player and enemy halves
-    const dividerY = origin.y + hexSize * 1.5 * 3.5;
-    ctx.globalAlpha = 0.08;
-    ctx.strokeStyle = '#ffd700';
+    ctx.globalAlpha = 0.12;
+    ctx.strokeStyle = '#f1c35d';
     ctx.lineWidth = 1;
     ctx.setLineDash([8, 6]);
     ctx.beginPath(); ctx.moveTo(40, dividerY); ctx.lineTo(canvas.width - 40, dividerY); ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
+
+    // Territory labels
+    ctx.save();
+    ctx.font = '700 18px Rajdhani';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255, 214, 116, 0.18)';
+    ctx.fillText('RIVAL TERRITORY', cx, dividerY - hexSize * 2.85);
+    ctx.fillStyle = 'rgba(125, 200, 255, 0.22)';
+    ctx.fillText('YOUR TERRITORY', cx, dividerY + hexSize * 3.15);
+    ctx.restore();
 
     // Vignette
     const vigGrad = ctx.createRadialGradient(cx, cy, canvas.height * 0.3, cx, cy, canvas.height * 0.8);
@@ -208,23 +256,29 @@
     }
     path.closePath();
 
-    // Semi-transparent fill (15% opacity tint)
+    // Semi-transparent fill with beveled shading
     const isDark = (fill === '#1e2a38' || fill === '#2e1a1a');
     if (isDark) {
-      // Empty hex: very subtle tint
-      ctx.fillStyle = fill === '#1e2a38'
-        ? 'rgba(25,45,75,0.25)'   // Player side: blue tint
-        : 'rgba(55,25,25,0.25)';  // Enemy side: red tint
+      const emptyGrad = ctx.createLinearGradient(cx, cy - hexSize, cx, cy + hexSize);
+      if (fill === '#1e2a38') {
+        emptyGrad.addColorStop(0, 'rgba(41, 70, 116, 0.28)');
+        emptyGrad.addColorStop(1, 'rgba(16, 28, 49, 0.16)');
+      } else {
+        emptyGrad.addColorStop(0, 'rgba(90, 34, 42, 0.22)');
+        emptyGrad.addColorStop(1, 'rgba(44, 17, 22, 0.12)');
+      }
+      ctx.fillStyle = emptyGrad;
     } else {
-      // Occupied hex: faction color with low opacity
-      ctx.globalAlpha = 0.15;
-      ctx.fillStyle = fill;
+      const filledGrad = ctx.createLinearGradient(cx, cy - hexSize, cx, cy + hexSize);
+      filledGrad.addColorStop(0, shadeColor(fill, 18));
+      filledGrad.addColorStop(1, shadeColor(fill, -18));
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = filledGrad;
       ctx.fill(path);
       ctx.globalAlpha = 1;
-      // Add subtle inner gradient
-      const innerGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, hexSize);
-      innerGrad.addColorStop(0, 'rgba(255,255,255,0.06)');
-      innerGrad.addColorStop(1, 'rgba(0,0,0,0.1)');
+      const innerGrad = ctx.createRadialGradient(cx, cy - hexSize * 0.15, hexSize * 0.08, cx, cy, hexSize);
+      innerGrad.addColorStop(0, 'rgba(255,255,255,0.12)');
+      innerGrad.addColorStop(1, 'rgba(0,0,0,0.18)');
       ctx.fillStyle = innerGrad;
     }
     ctx.fill(path);
@@ -340,7 +394,8 @@
     const unitKey = unitId || unit.name.toLowerCase().replace(/\s+/g, '_');
 
     // IDLE SWAY (subtle bob for all units)
-    const swayOffset = Math.sin(animationFrame * 0.1 + parseInt(unitKey)) * 2;
+    const swaySeed = unitKey.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    const swayOffset = Math.sin(animationFrame * 0.1 + swaySeed) * 2;
     const swayX = cx + swayOffset;
     const swayY = cy + Math.abs(Math.cos(animationFrame * 0.08)) * 1;
 
