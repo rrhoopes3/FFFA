@@ -1,0 +1,5 @@
+# Asset symlinks — sprites and portraits are in the root project's sheets/ and portraits/ dirs
+# Symlink them into these directories when opening the Godot project locally
+sprites/*.png
+sprites/sheets
+portraits/*.png
