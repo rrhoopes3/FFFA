@@ -31,7 +31,7 @@ You'll get `Godot_v4.4-stable_win64.exe` (windowed) and `Godot_v4.4-stable_win64
 ./tools/godot/Godot_v4.4-stable_win64_console.exe --path godot4
 ```
 
-Press F5 in the editor or run the binary directly. The current main scene runs a hardcoded 1v1 demo (Tabby Thug vs Tabby Thug) one second after load to validate the sim → view bridge.
+Press F5 in the editor or run the binary directly. The current main scene loads straight into the M5 game loop: shop phase, bench, hex board, action buttons (Reroll / Level Up / Start Fight), synergy panel. Click a shop card to buy, drag a bench slot onto a player-half hex to place, drag a bench slot onto the SELL panel to sell, click a placed unit's hex to return it to the bench. Press Start Fight to run combat against a procedurally rolled enemy team — combat self-resolves, gold/health update, the round advances, and a fresh shop is rolled.
 
 ### Run the headless sim test (no rendering)
 
@@ -49,7 +49,10 @@ The arena scene self-screenshots when run with `FFFA_SHOTS=1` set. Useful for he
 
 ```bash
 FFFA_SHOTS=1 ./tools/godot/Godot_v4.4-stable_win64_console.exe --path godot4
-# image lands at tmp/m3_pilot.png
+# tmp/m5_shop.png — static shop-phase screenshot
+FFFA_SHOTS=2 ./tools/godot/Godot_v4.4-stable_win64_console.exe --path godot4
+# Same plus a scripted autotest: buys 3 units, places them, starts a fight,
+# saves m5_shop.png, m5_placed.png, m5_combat.png, m5_postcombat.png
 ```
 
 This needs a windowed run (not `--headless`) since headless skips rendering.
@@ -71,19 +74,33 @@ godot4/
 │   │   ├── combat_sim.gd          Tick loop, attacks, abilities, status fx, win/loss          (autoload: CombatSim)
 │   │   └── hex.gd                 Hex math (offset coords, 7×8, odd-r) — preload, NO class_name
 │   ├── view/                      3D presentation. Subscribes to EventBus.
-│   │   ├── arena_view.gd          Top-level 3D scene controller; spawns UnitView per signal
+│   │   ├── arena_view.gd          Top-level 3D scene; phases between "shop" and "combat" view modes
 │   │   ├── hex_grid_3d.gd         56 clickable hex tiles, hover/click pick via Camera3D raycast
 │   │   └── unit_view.gd           One unit's 3D presentation: mesh, team disc, HP bar, anims
+│   ├── ui/                        2D Control overlay built programmatically — no .tscn babysitting
+│   │   ├── game_ui.gd             HUD, synergy panel, bench, shop, sell zone, action buttons
+│   │   ├── bench_slot.gd          Drag-source / drop-target Panel (swap on bench-bench drop)
+│   │   ├── sell_zone.gd           Drop target that sells the dragged bench unit
+│   │   └── drop_catcher.gd        Fullscreen drop target — routes drops over the 3D arena to a hex pick
 │   └── sim_test.gd                M1 headless validation
 ├── art/
 │   ├── arena/arena.glb            (currently broken, see Known Issues)
-│   └── units/                     Per-unit chibi cats — alley_tabby_thug.glb is the M3 pilot
+│   └── units/                     48 procedural chibi cats, one .glb per unit (M4)
 └── shaders/                       Empty for now; M6 polish item
 ```
 
 ### sim/view split
 
 The sim layer **never** imports view code, sound, or particles. It only emits `EventBus` signals. The view layer subscribes and animates. This is the load-bearing architectural decision — it makes the sim testable in isolation, lets the visuals be rebuilt without touching gameplay, and keeps state changes deterministic.
+
+### Phases — `arena_view.gd`
+
+The 3D scene controller has two view modes:
+
+- **`shop`** — listens for `unit_placed` / `unit_removed` / `units_swapped` / `unit_merged` from `GameState` and keeps a `hex_key → UnitView` map in sync. No combat math, full HP, no animation beyond the idle bob.
+- **`combat`** — listens for `combat_unit_spawned` and friends from `CombatSim` and keeps a `uid → UnitView` map. On `combat_ended` it tears down all combat views and rebuilds the shop view from `GameState.player_board` (which `CombatSim` restores from `pre_combat_board`).
+
+Important ordering bug worth remembering: `CombatSim.start_combat()` must emit `combat_started` **before** calling `_spawn_units`, because the latter fires `combat_unit_spawned` and the view layer needs the phase flip first or it ignores the spawn signals.
 
 Key signals (see `event_bus.gd` for the full list):
 
@@ -94,6 +111,11 @@ Key signals (see `event_bus.gd` for the full list):
 - `unit_moved(uid, from_hex, to_hex)`
 - `unit_ability_cast(uid, ability_name)`
 - `status_applied(uid, status_type, duration)`
+- `unit_placed(unit_id, hex_key)` / `unit_removed(unit_id, hex_key)` — shop-phase placement
+- `units_swapped(hex_a, hex_b)` — board-board swap
+- `unit_merged(unit_id, new_stars)` — auto 3-of-a-kind upgrade
+- `synergies_updated(synergy_data: Dictionary)` — emitted whenever the player board changes
+- `gold_changed`, `health_changed`, `level_changed`, `round_changed`, `shop_refreshed`
 
 ## Asset pipeline — Blender MCP → Godot
 
@@ -101,18 +123,31 @@ Cats and the arena are authored in Blender via the BlenderMCP add-on, exported a
 
 ### Cat units (procedural primitives)
 
-`blender/units_pilot.blend` is the source. The pipeline script (currently inline in chat history; will be lifted to `blender/build_units.py` in M4) builds chibi cats from spheres/cubes/cones with per-unit color config:
+`blender/build_units.py` is the source-of-truth pipeline. It defines `UNIT_CONFIGS` (one entry per cat) and a `build_cat()` function that assembles a chibi from spheres/cubes/cones, joins them, and exports a `.glb`. Re-run via the BlenderMCP `execute_blender_code` tool:
 
 ```python
-UNIT = {
-  "id": "alley_tabby_thug",
-  "fur_main":  (0.34, 0.27, 0.20),
-  "fur_belly": (0.78, 0.72, 0.60),
-  "accent":    (0.10, 0.10, 0.12),  # jacket
-  "eye_color": (0.85, 0.75, 0.20),
-  "torn_ear":  True,
+import os
+ns = {}
+exec(open("B:/FFFA/blender/build_units.py").read(), ns)
+ns["build_all"]()  # writes 48 .glbs into godot4/art/units/
+```
+
+After regenerating, run `Godot_v4.4-stable_win64_console.exe --headless --path godot4 --import` to refresh the `.glb.import` sidecars.
+
+Per-unit visual config:
+
+```python
+"alley_tabby_thug": {
+    "fur_main":  (0.34, 0.27, 0.20),
+    "fur_belly": (0.78, 0.72, 0.60),
+    "accent":    (0.10, 0.10, 0.12),  # jacket
+    "eye_color": EYE_GOLD,
+    "torn_ear":  True,
+    "scale":     0.95,
 }
 ```
+
+Optional config flags: `fluffy` (extra shoulder sphere), `short_ear` (Persians), `fold_ear` (Scottish Folds — cones rotated forward), `ear_tufts` (MaineCoons), `points` (a darker face/ear/leg color for colorpoints — Siamese, Ragdoll, Himalayan), `tank` (wider body + collar), `hairless` (Sphynx). Cost-derived `scale` keeps 5-cost units visibly larger than 1-cost.
 
 After joining, exporting expects an active object set (`bpy.context.view_layer.objects.active = obj`), otherwise gltf2 throws `'Context' object has no attribute 'active_object'`. The script handles this.
 
@@ -138,7 +173,7 @@ Estimated cost: ~$10–20 for all 48 units.
 - **`art/arena/arena.glb` doesn't import cleanly into Godot.** Materials are read with garbage colors and the embedded Sun light fights with the scene's own DirectionalLight3D, causing washed-out white floors and pure-black props. Currently bypassed with a procedural `PlaneMesh` floor in `main.tscn`. Whole arena visual pass is an M6 task.
 - **No rigging.** Cats are static meshes — animation is procedural via transforms and shader flashes (idle bob, attack lunge, hurt material flash, death scale-fade). Good enough at game distance, but adding a shared cat armature would unlock more expressive anims (a possible M6 stretch).
 - **Headless `--import` floods stderr** with `progress_dialog`/`task_step` errors. They're benign — the import succeeds. No fix planned; just filter them.
-- **Procedural cats don't visually distinguish factions much yet.** M4 will fix this with per-faction palettes and accessory variation.
+- **Procedural cats are still primitive blobs.** M4 gave them faction palettes, points, fold-ears, ear tufts, fluff, etc., which is enough to tell factions apart at game distance — but the per-unit silhouette differentiation inside a faction is mostly color, not geometry. A proper character-art pass (or AI mesh gen via Hyper3D once a paid key is in place) is M6 polish work.
 
 ## Milestone status
 
@@ -147,8 +182,8 @@ Estimated cost: ~$10–20 for all 48 units.
 | **M1** | Sim core extracted, headless test passing | ✅ done |
 | **M2** | 3D arena + 7×8 clickable hex grid | ✅ done |
 | **M3** | Pilot cat (Tabby Thug) full pipeline, 1v1 fight in 3D | ✅ done |
-| **M4** | Generate all 48 units with faction palettes | pending |
-| **M5** | Shop / bench / merge / synergies UI | pending |
+| **M4** | Generate all 48 units with faction palettes | ✅ done |
+| **M5** | Shop / bench / merge / synergies UI | ✅ done |
 | **M6** | Polish — camera, VFX, sound, fix arena.glb, optional rigging | pending |
 
 When M6 lands, `godot/` (the v2 2D port) gets deleted and `godot4/` becomes the only project.

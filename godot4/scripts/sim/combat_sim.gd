@@ -37,12 +37,15 @@ func start_combat() -> void:
 	if GameState.enemy_board.is_empty():
 		GameState.enemy_board = generate_enemy_board(GameState.current_round)
 
-	_spawn_units(GameState.player_board, GameState.enemy_board)
-
+	# Announce phase change BEFORE spawning so the view layer flips into
+	# combat mode and accepts the combat_unit_spawned signals that follow.
 	GameState.combat_state = "combat"
 	tick_count = 0
 	EventBus.combat_started.emit()
 	EventBus.banner_requested.emit("FIGHT!", Color(1, 0.3, 0.3))
+
+	_spawn_units(GameState.player_board, GameState.enemy_board)
+
 	combat_timer.start()
 
 

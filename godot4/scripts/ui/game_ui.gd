@@ -1,0 +1,744 @@
+extends Control
+## M5 game UI: HUD, synergy panel, bench, shop, sell zone, action buttons.
+##
+## Builds its entire layout programmatically — no .tscn babysitting. Listens
+## to GameState's EventBus signals to refresh in place.
+##
+## Interaction model
+##  - Click a shop card → try_buy_unit (lands on first empty bench slot)
+##  - Drag a bench slot → hex on the 3D arena: place
+##  - Drag a bench slot → bench slot: swap
+##  - Drag a bench slot → sell zone: sell from bench
+##  - Click a board hex (no drag) → return that unit to the bench
+##  - "Reroll" / "Level Up" / "Start Fight" buttons in the action bar
+##
+## Drag mechanics use a transparent fullscreen DropCatcher Control underneath
+## the panels that catches releases over the 3D arena and routes them to
+## arena_view.screen_to_hex_key().
+
+const FACTION_COLORS := {
+	"Alley":         Color("#A0AEC1"),
+	"Persian":       Color("#F3E5F5"),
+	"Siamese":       Color("#60A5FA"),
+	"MaineCoon":     Color("#92400E"),
+	"Bengal":        Color("#F59E0B"),
+	"Sphynx":        Color("#F3A5B6"),
+	"ScottishFold":  Color("#D1D5DB"),
+	"Ragdoll":       Color("#93C5FD"),
+}
+
+const COST_COLORS := {
+	1: Color("#9CA3AF"),
+	2: Color("#34D399"),
+	3: Color("#60A5FA"),
+	4: Color("#A78BFA"),
+	5: Color("#F59E0B"),
+}
+
+const BENCH_SIZE := 9
+const SHOP_SIZE := 5
+const CARD_W := 130.0
+const CARD_H := 96.0
+const SLOT_W := 92.0
+const SLOT_H := 96.0
+
+# Resolved at runtime — set by main.tscn before _ready or fetched lazily.
+var arena_view: Node3D
+
+# UI node refs (populated in _build_ui)
+var hud_gold_label: Label
+var hud_health_label: Label
+var hud_level_label: Label
+var hud_round_label: Label
+var levelup_button: Button
+var reroll_button: Button
+var fight_button: Button
+var bench_slots: Array = []     # Array[Control], one per bench index
+var shop_cards: Array = []      # Array[Button], one per shop index
+var sell_zone: Panel
+var synergy_list: VBoxContainer
+var status_label: Label
+var drop_catcher: Control       # Fullscreen, mouse-pass, accepts drops over 3D
+
+
+func _ready() -> void:
+	mouse_filter = Control.MOUSE_FILTER_PASS
+	anchor_right = 1.0
+	anchor_bottom = 1.0
+	_build_ui()
+
+	EventBus.gold_changed.connect(_refresh_hud)
+	EventBus.health_changed.connect(_refresh_hud)
+	EventBus.level_changed.connect(_refresh_hud)
+	EventBus.round_changed.connect(_refresh_hud)
+	EventBus.shop_refreshed.connect(_refresh_shop)
+	EventBus.unit_bought.connect(_on_unit_bought)
+	EventBus.unit_sold.connect(_on_unit_sold_signal)
+	EventBus.unit_placed.connect(_on_unit_placed)
+	EventBus.unit_removed.connect(_on_unit_removed)
+	EventBus.unit_merged.connect(_on_unit_merged)
+	EventBus.synergies_updated.connect(_refresh_synergies)
+	EventBus.combat_started.connect(_on_combat_started)
+	EventBus.combat_ended.connect(_on_combat_ended)
+
+	# Hook up the arena's hex click → return-to-bench.
+	if arena_view == null:
+		arena_view = get_node_or_null("/root/Main")
+	if arena_view and arena_view.has_signal("arena_hex_clicked"):
+		arena_view.arena_hex_clicked.connect(_on_arena_hex_clicked)
+
+	GameState.start_game()
+
+	# Visual validation hook (opt-in via env var). FFFA_SHOTS=1 captures a
+	# static shop screenshot. FFFA_SHOTS=2 also runs an autotest that buys,
+	# places, and starts combat — exercising the full M5 loop end-to-end.
+	if OS.has_environment("FFFA_SHOTS"):
+		get_tree().create_timer(1.0).timeout.connect(_capture_shop_shot)
+		if OS.get_environment("FFFA_SHOTS") == "2":
+			get_tree().create_timer(1.5).timeout.connect(_run_autotest)
+
+
+func _capture_shop_shot() -> void:
+	var img := get_viewport().get_texture().get_image()
+	var path := "B:/FFFA/tmp/m5_shop.png"
+	DirAccess.make_dir_recursive_absolute("B:/FFFA/tmp")
+	img.save_png(path)
+	print("[ui] saved ", path)
+	if OS.get_environment("FFFA_SHOTS") != "2":
+		get_tree().create_timer(0.3).timeout.connect(get_tree().quit)
+
+
+func _run_autotest() -> void:
+	# 1. Buy 3 units (whichever the shop rolled)
+	for i in 3:
+		GameState.try_buy_unit(i)
+	# 2. Place them on board hexes
+	var placed := 0
+	for i in BENCH_SIZE:
+		if GameState.bench[i] != null and placed < 3:
+			var hex_key := "%d,%d" % [2 + placed, 6]
+			GameState.place_unit_from_bench(i, hex_key)
+			placed += 1
+	# 3. Snapshot the populated shop
+	get_tree().create_timer(0.5).timeout.connect(_capture_placed_shot)
+	# 4. Start a fight a beat later
+	get_tree().create_timer(1.0).timeout.connect(CombatSim.start_combat)
+	# 5. Snapshot mid-combat
+	get_tree().create_timer(3.0).timeout.connect(_capture_combat_shot)
+	# 6. Quit a few seconds after combat starts (combat self-resolves)
+	get_tree().create_timer(20.0).timeout.connect(_capture_postcombat_and_quit)
+
+
+func _capture_placed_shot() -> void:
+	var img := get_viewport().get_texture().get_image()
+	img.save_png("B:/FFFA/tmp/m5_placed.png")
+	print("[ui] saved m5_placed.png — bench:%d board:%d" %
+		[_count_bench(), GameState.player_board.size()])
+
+
+func _capture_combat_shot() -> void:
+	var img := get_viewport().get_texture().get_image()
+	img.save_png("B:/FFFA/tmp/m5_combat.png")
+	print("[ui] saved m5_combat.png")
+
+
+func _capture_postcombat_and_quit() -> void:
+	var img := get_viewport().get_texture().get_image()
+	img.save_png("B:/FFFA/tmp/m5_postcombat.png")
+	print("[ui] saved m5_postcombat.png — round:%d gold:%d health:%d" %
+		[GameState.current_round, GameState.gold, GameState.health])
+	get_tree().create_timer(0.3).timeout.connect(get_tree().quit)
+
+
+func _count_bench() -> int:
+	var n := 0
+	for u in GameState.bench:
+		if u != null:
+			n += 1
+	return n
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LAYOUT
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _build_ui() -> void:
+	# Drop catcher first so it sits at the back of the z-order — panels
+	# added after it draw on top and intercept mouse input normally.
+	_build_drop_catcher()
+	_build_hud_bar()
+	_build_synergy_panel()
+	_build_bench_row()
+	_build_shop_row()
+	_build_sell_zone()
+	_build_action_buttons()
+	_build_status_line()
+
+
+func _styled_panel(bg: Color, border: Color = Color(0, 0, 0, 0)) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.border_color = border
+	sb.set_border_width_all(2 if border.a > 0.0 else 0)
+	sb.set_corner_radius_all(6)
+	sb.content_margin_left = 6
+	sb.content_margin_right = 6
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	return sb
+
+
+func _build_hud_bar() -> void:
+	var bar := PanelContainer.new()
+	bar.add_theme_stylebox_override("panel", _styled_panel(Color(0.06, 0.07, 0.12, 0.85)))
+	bar.anchor_left = 0.0
+	bar.anchor_right = 1.0
+	bar.offset_left = 12
+	bar.offset_top = 8
+	bar.offset_right = -12
+	bar.offset_bottom = 48
+	add_child(bar)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 24)
+	bar.add_child(hbox)
+
+	hud_gold_label = _hud_chip("GOLD", "50", Color("#FFD166"))
+	hud_health_label = _hud_chip("HP", "100", Color("#EF476F"))
+	hud_level_label = _hud_chip("LVL", "1", Color("#06D6A0"))
+	hud_round_label = _hud_chip("ROUND", "1", Color("#118AB2"))
+	for chip in [hud_gold_label, hud_health_label, hud_level_label, hud_round_label]:
+		hbox.add_child(chip.get_parent())
+
+
+func _hud_chip(label_text: String, value_text: String, color: Color) -> Label:
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.add_theme_color_override("font_color", color)
+	lbl.add_theme_font_size_override("font_size", 14)
+	box.add_child(lbl)
+	var val := Label.new()
+	val.text = value_text
+	val.add_theme_color_override("font_color", Color("#F8FAFC"))
+	val.add_theme_font_size_override("font_size", 18)
+	box.add_child(val)
+	return val
+
+
+func _build_synergy_panel() -> void:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _styled_panel(Color(0.06, 0.07, 0.12, 0.78)))
+	panel.anchor_left = 0.0
+	panel.anchor_top = 0.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = 12
+	panel.offset_top = 64
+	panel.offset_right = 184
+	panel.offset_bottom = -260
+	add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "SYNERGIES"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color("#FBBF24"))
+	vbox.add_child(title)
+
+	synergy_list = VBoxContainer.new()
+	synergy_list.add_theme_constant_override("separation", 2)
+	vbox.add_child(synergy_list)
+
+
+func _build_bench_row() -> void:
+	var bar := PanelContainer.new()
+	bar.add_theme_stylebox_override("panel", _styled_panel(Color(0.06, 0.07, 0.12, 0.85)))
+	bar.anchor_left = 0.5
+	bar.anchor_right = 0.5
+	bar.anchor_top = 1.0
+	bar.anchor_bottom = 1.0
+	var bench_w := BENCH_SIZE * (SLOT_W + 6) + 12
+	bar.offset_left = -bench_w * 0.5
+	bar.offset_right = bench_w * 0.5
+	bar.offset_top = -260
+	bar.offset_bottom = -156
+	add_child(bar)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 6)
+	bar.add_child(hbox)
+
+	for i in BENCH_SIZE:
+		var slot := _make_bench_slot(i)
+		hbox.add_child(slot)
+		bench_slots.append(slot)
+
+
+func _build_shop_row() -> void:
+	var bar := PanelContainer.new()
+	bar.add_theme_stylebox_override("panel", _styled_panel(Color(0.06, 0.07, 0.12, 0.92), Color("#FBBF24", 0.6)))
+	bar.anchor_left = 0.5
+	bar.anchor_right = 0.5
+	bar.anchor_top = 1.0
+	bar.anchor_bottom = 1.0
+	var shop_w := SHOP_SIZE * (CARD_W + 8) + 16
+	bar.offset_left = -shop_w * 0.5
+	bar.offset_right = shop_w * 0.5
+	bar.offset_top = -120
+	bar.offset_bottom = -12
+	add_child(bar)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 8)
+	bar.add_child(hbox)
+
+	for i in SHOP_SIZE:
+		var card := _make_shop_card(i)
+		hbox.add_child(card)
+		shop_cards.append(card)
+
+
+func _build_sell_zone() -> void:
+	sell_zone = Panel.new()
+	sell_zone.add_theme_stylebox_override("panel", _styled_panel(Color(0.55, 0.10, 0.12, 0.55), Color("#EF4444", 0.9)))
+	sell_zone.anchor_left = 1.0
+	sell_zone.anchor_top = 1.0
+	sell_zone.anchor_right = 1.0
+	sell_zone.anchor_bottom = 1.0
+	sell_zone.offset_left = -200
+	sell_zone.offset_top = -260
+	sell_zone.offset_right = -16
+	sell_zone.offset_bottom = -156
+	sell_zone.set_script(_make_sell_zone_script())
+	sell_zone.set_meta("ui", self)
+	add_child(sell_zone)
+
+	var lbl := Label.new()
+	lbl.text = "SELL"
+	lbl.add_theme_font_size_override("font_size", 28)
+	lbl.add_theme_color_override("font_color", Color("#FECACA"))
+	lbl.anchor_right = 1.0
+	lbl.anchor_bottom = 1.0
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	sell_zone.add_child(lbl)
+
+
+func _build_action_buttons() -> void:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 8)
+	bar.anchor_left = 1.0
+	bar.anchor_top = 1.0
+	bar.anchor_right = 1.0
+	bar.anchor_bottom = 1.0
+	bar.offset_left = -460
+	bar.offset_top = -148
+	bar.offset_right = -16
+	bar.offset_bottom = -116
+	add_child(bar)
+
+	reroll_button = _make_action_button("↻ REROLL (2g)", _on_reroll_pressed)
+	bar.add_child(reroll_button)
+
+	levelup_button = _make_action_button("LEVEL UP (5g)", _on_levelup_pressed)
+	bar.add_child(levelup_button)
+
+	fight_button = _make_action_button("⚔ START FIGHT", _on_fight_pressed)
+	bar.add_child(fight_button)
+
+
+func _make_action_button(label: String, callback: Callable) -> Button:
+	var btn := Button.new()
+	btn.text = label
+	btn.custom_minimum_size = Vector2(140, 32)
+	btn.pressed.connect(callback)
+	return btn
+
+
+func _build_status_line() -> void:
+	status_label = Label.new()
+	status_label.anchor_left = 0.0
+	status_label.anchor_top = 1.0
+	status_label.anchor_right = 1.0
+	status_label.anchor_bottom = 1.0
+	status_label.offset_left = 12
+	status_label.offset_top = -22
+	status_label.offset_right = -12
+	status_label.offset_bottom = -2
+	status_label.text = ""
+	status_label.add_theme_color_override("font_color", Color("#FBBF24"))
+	status_label.add_theme_font_size_override("font_size", 13)
+	add_child(status_label)
+
+
+func _build_drop_catcher() -> void:
+	# Fullscreen Control that catches drag-drop releases over the 3D arena
+	# (anywhere not eaten by a smaller Control). Mouse_filter = PASS so
+	# regular hover/click events still reach the 3D viewport.
+	drop_catcher = Control.new()
+	drop_catcher.mouse_filter = Control.MOUSE_FILTER_PASS
+	drop_catcher.anchor_right = 1.0
+	drop_catcher.anchor_bottom = 1.0
+	drop_catcher.set_script(_make_drop_catcher_script())
+	drop_catcher.set_meta("ui", self)
+	add_child(drop_catcher)
+
+
+# ─── Bench slot factory ─────────────────────────────────────────────────────
+
+func _make_bench_slot(index: int) -> Control:
+	var slot := Panel.new()
+	slot.custom_minimum_size = Vector2(SLOT_W, SLOT_H)
+	slot.add_theme_stylebox_override("panel", _styled_panel(Color(0.12, 0.14, 0.20, 0.95), Color("#475569")))
+	slot.set_script(_make_bench_slot_script())
+	slot.set_meta("ui", self)
+	slot.set_meta("index", index)
+
+	var name_label := Label.new()
+	name_label.name = "NameLabel"
+	name_label.text = ""
+	name_label.add_theme_font_size_override("font_size", 11)
+	name_label.add_theme_color_override("font_color", Color("#F8FAFC"))
+	name_label.anchor_right = 1.0
+	name_label.anchor_bottom = 1.0
+	name_label.offset_left = 4
+	name_label.offset_top = 4
+	name_label.offset_right = -4
+	name_label.offset_bottom = -4
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	slot.add_child(name_label)
+
+	var star_label := Label.new()
+	star_label.name = "StarLabel"
+	star_label.text = ""
+	star_label.add_theme_font_size_override("font_size", 14)
+	star_label.add_theme_color_override("font_color", Color("#FBBF24"))
+	star_label.anchor_left = 1.0
+	star_label.anchor_right = 1.0
+	star_label.offset_left = -22
+	star_label.offset_top = 2
+	star_label.offset_right = -2
+	slot.add_child(star_label)
+
+	return slot
+
+
+# ─── Shop card factory ──────────────────────────────────────────────────────
+
+func _make_shop_card(index: int) -> Button:
+	var card := Button.new()
+	card.custom_minimum_size = Vector2(CARD_W, CARD_H)
+	card.text = ""
+	card.set_meta("index", index)
+	card.pressed.connect(_on_shop_card_pressed.bind(index))
+	return card
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  STATE → UI REFRESH
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _refresh_hud(_v = null) -> void:
+	if hud_gold_label: hud_gold_label.text = str(GameState.gold)
+	if hud_health_label: hud_health_label.text = str(GameState.health)
+	if hud_level_label: hud_level_label.text = str(GameState.player_level)
+	if hud_round_label: hud_round_label.text = str(GameState.current_round)
+	if levelup_button:
+		var cost := GameState.get_level_up_cost()
+		if cost < 0:
+			levelup_button.text = "MAX LEVEL"
+			levelup_button.disabled = true
+		else:
+			levelup_button.text = "LEVEL UP (%dg)" % cost
+			levelup_button.disabled = GameState.gold < cost
+
+
+func _refresh_shop() -> void:
+	for i in SHOP_SIZE:
+		var card: Button = shop_cards[i]
+		if i >= GameState.shop_units.size():
+			_paint_card(card, "")
+			continue
+		var uid: String = GameState.shop_units[i]
+		_paint_card(card, uid)
+
+
+func _paint_card(card: Button, unit_id: String) -> void:
+	if unit_id.is_empty():
+		card.text = ""
+		card.disabled = true
+		card.modulate = Color(0.4, 0.4, 0.4, 0.5)
+		card.add_theme_stylebox_override("normal", _styled_panel(Color(0.10, 0.12, 0.18, 0.6)))
+		return
+	var data: Dictionary = GameData.units_data.get(unit_id, {})
+	if data.is_empty():
+		return
+	var faction: String = data.get("faction", "")
+	var cost: int = int(data.get("cost", 1))
+	var name_str: String = data.get("name", unit_id)
+	card.text = "%s\n[%s]\n%dg" % [name_str, faction, cost]
+	card.modulate = Color(1, 1, 1, 1)
+	card.disabled = GameState.gold < cost
+	var bg := COST_COLORS.get(cost, Color("#475569")) as Color
+	bg.a = 0.85
+	var border := FACTION_COLORS.get(faction, Color("#94A3B8")) as Color
+	card.add_theme_stylebox_override("normal", _styled_panel(bg, border))
+	card.add_theme_stylebox_override("hover", _styled_panel(bg.lightened(0.15), border))
+	card.add_theme_stylebox_override("pressed", _styled_panel(bg.darkened(0.15), border))
+	card.add_theme_stylebox_override("disabled", _styled_panel(Color(0.18, 0.18, 0.20, 0.7), border))
+	card.add_theme_color_override("font_color", Color("#F8FAFC"))
+	card.add_theme_color_override("font_disabled_color", Color("#94A3B8"))
+	card.add_theme_font_size_override("font_size", 12)
+
+
+func _refresh_bench() -> void:
+	for i in BENCH_SIZE:
+		var slot: Control = bench_slots[i]
+		var u = GameState.bench[i]
+		var name_label: Label = slot.get_node("NameLabel")
+		var star_label: Label = slot.get_node("StarLabel")
+		if u == null:
+			name_label.text = ""
+			star_label.text = ""
+			slot.add_theme_stylebox_override("panel", _styled_panel(Color(0.12, 0.14, 0.20, 0.95), Color("#475569")))
+		else:
+			var data: Dictionary = GameData.units_data.get(u.id, {})
+			name_label.text = data.get("name", u.id)
+			star_label.text = "★".repeat(int(u.stars))
+			var faction: String = data.get("faction", "")
+			var border: Color = FACTION_COLORS.get(faction, Color("#94A3B8"))
+			var cost: int = int(data.get("cost", 1))
+			var bg: Color = COST_COLORS.get(cost, Color("#475569"))
+			bg.a = 0.7
+			slot.add_theme_stylebox_override("panel", _styled_panel(bg, border))
+
+
+func _refresh_synergies(synergies: Dictionary = {}) -> void:
+	if synergy_list == null:
+		return
+	for child in synergy_list.get_children():
+		child.queue_free()
+	if synergies.is_empty():
+		synergies = GameState.get_active_synergies()
+	# Build a count map so we show "Bengal 4/6" style progression too.
+	var counts: Dictionary = {}
+	for hk in GameState.player_board:
+		var u = GameState.player_board[hk]
+		var data: Dictionary = GameData.units_data.get(u.id, {})
+		var faction: String = data.get("faction", "")
+		if faction != "":
+			counts[faction] = counts.get(faction, 0) + 1
+	for faction_name in counts:
+		var entry := HBoxContainer.new()
+		var pip := ColorRect.new()
+		pip.color = FACTION_COLORS.get(faction_name, Color("#94A3B8"))
+		pip.custom_minimum_size = Vector2(10, 14)
+		entry.add_child(pip)
+		var lbl := Label.new()
+		var count: int = counts[faction_name]
+		var thresh: int = _next_threshold(faction_name, count)
+		lbl.text = "  %s %d/%d" % [faction_name, count, thresh]
+		lbl.add_theme_font_size_override("font_size", 12)
+		var col: Color = Color("#E5E7EB")
+		if synergies.has(faction_name):
+			col = Color("#FBBF24")
+		lbl.add_theme_color_override("font_color", col)
+		entry.add_child(lbl)
+		synergy_list.add_child(entry)
+
+
+func _next_threshold(faction: String, count: int) -> int:
+	var syn: Dictionary = GameData.faction_synergies.get(faction, {})
+	if syn.is_empty():
+		return count
+	var thresholds: Array = syn.get("thresholds", [2, 4, 6])
+	for t in thresholds:
+		if count < int(t):
+			return int(t)
+	return int(thresholds[-1])
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  EVENT HANDLERS — game state → UI refresh
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _on_unit_bought(_unit_id: String, _slot: int) -> void:
+	_refresh_bench()
+	_refresh_shop()
+	_refresh_hud()
+
+
+func _on_unit_sold_signal(_unit_id: String, _source: String) -> void:
+	_refresh_bench()
+	_refresh_hud()
+
+
+func _on_unit_placed(_unit_id: String, _hex_key: String) -> void:
+	_refresh_bench()
+	_refresh_synergies()
+
+
+func _on_unit_removed(_unit_id: String, _hex_key: String) -> void:
+	_refresh_bench()
+	_refresh_synergies()
+
+
+func _on_unit_merged(unit_id: String, new_stars: int) -> void:
+	_refresh_bench()
+	_refresh_synergies()
+	_set_status("MERGED → %s ★%d" % [unit_id, new_stars])
+
+
+func _on_combat_started() -> void:
+	_set_status("FIGHT!")
+	fight_button.disabled = true
+	reroll_button.disabled = true
+	levelup_button.disabled = true
+	for c in shop_cards: c.disabled = true
+
+
+func _on_combat_ended(player_won: bool) -> void:
+	_set_status("VICTORY!" if player_won else "DEFEAT")
+	fight_button.disabled = false
+	reroll_button.disabled = false
+	_refresh_hud()
+	_refresh_shop()
+	_refresh_bench()
+	_refresh_synergies()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  USER ACTIONS
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _on_shop_card_pressed(index: int) -> void:
+	if not GameState.try_buy_unit(index):
+		_set_status("can't buy: not enough gold or bench full")
+
+
+func _on_reroll_pressed() -> void:
+	if not GameState.try_reroll():
+		_set_status("can't reroll: need 2g")
+
+
+func _on_levelup_pressed() -> void:
+	if not GameState.try_level_up():
+		_set_status("can't level up")
+
+
+func _on_fight_pressed() -> void:
+	if GameState.combat_state != "idle":
+		return
+	if GameState.player_board.is_empty():
+		_set_status("place at least one unit before fighting")
+		return
+	CombatSim.start_combat()
+
+
+func _on_arena_hex_clicked(hex_key: String) -> void:
+	# In shop phase, clicking a board hex returns its unit to the bench.
+	if GameState.combat_state != "idle":
+		return
+	if GameState.player_board.has(hex_key):
+		GameState.return_unit_to_bench(hex_key)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  DRAG-DROP HELPERS (called by bench-slot / drop-catcher inner scripts)
+# ═══════════════════════════════════════════════════════════════════════════
+
+func make_bench_drag_preview(bench_index: int) -> Control:
+	var u = GameState.bench[bench_index]
+	if u == null:
+		return null
+	var preview := Panel.new()
+	preview.custom_minimum_size = Vector2(SLOT_W, SLOT_H)
+	preview.size = Vector2(SLOT_W, SLOT_H)
+	var data: Dictionary = GameData.units_data.get(u.id, {})
+	var border := FACTION_COLORS.get(data.get("faction", ""), Color("#94A3B8")) as Color
+	var cost := int(data.get("cost", 1))
+	var bg := COST_COLORS.get(cost, Color("#475569")) as Color
+	bg.a = 0.85
+	preview.add_theme_stylebox_override("panel", _styled_panel(bg, border))
+	var lbl := Label.new()
+	lbl.text = data.get("name", u.id)
+	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
+	lbl.anchor_right = 1.0
+	lbl.anchor_bottom = 1.0
+	lbl.offset_left = 4
+	lbl.offset_right = -4
+	lbl.offset_top = 4
+	lbl.offset_bottom = -4
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	preview.add_child(lbl)
+	return preview
+
+
+func handle_drop_on_arena(screen_pos: Vector2, drag_data: Variant) -> void:
+	if arena_view == null:
+		return
+	if not (drag_data is Dictionary) or drag_data.get("source", "") != "bench":
+		return
+	var bench_idx: int = drag_data.get("index", -1)
+	if bench_idx < 0:
+		return
+	var hex_key: String = arena_view.screen_to_hex_key(screen_pos)
+	if hex_key.is_empty():
+		return
+	if not GameState.place_unit_from_bench(bench_idx, hex_key):
+		_set_status("can't place there")
+
+
+func handle_drop_on_bench(target_index: int, drag_data: Variant) -> void:
+	if not (drag_data is Dictionary) or drag_data.get("source", "") != "bench":
+		return
+	var src_idx: int = drag_data.get("index", -1)
+	if src_idx < 0 or src_idx == target_index:
+		return
+	var src_unit = GameState.bench[src_idx]
+	var dst_unit = GameState.bench[target_index]
+	GameState.bench[target_index] = src_unit
+	GameState.bench[src_idx] = dst_unit
+	GameState.try_merge_all()
+	_refresh_bench()
+
+
+func handle_drop_on_sell(drag_data: Variant) -> void:
+	if not (drag_data is Dictionary):
+		return
+	if drag_data.get("source", "") != "bench":
+		return
+	GameState.sell_unit_from_bench(drag_data.get("index", -1))
+
+
+func _set_status(text: String) -> void:
+	if status_label:
+		status_label.text = text
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  INNER SCRIPTS for drag-drop targets
+# ═══════════════════════════════════════════════════════════════════════════
+# Each drop target needs its own _can_drop_data / _drop_data overrides.
+# Godot 4 attaches these via GDScript subclassing — easiest path is to load
+# small inline scripts from disk. We create them lazily here.
+
+func _make_bench_slot_script() -> GDScript:
+	return preload("res://scripts/ui/bench_slot.gd")
+
+
+func _make_sell_zone_script() -> GDScript:
+	return preload("res://scripts/ui/sell_zone.gd")
+
+
+func _make_drop_catcher_script() -> GDScript:
+	return preload("res://scripts/ui/drop_catcher.gd")
