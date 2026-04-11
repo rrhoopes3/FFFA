@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bi0eh3sefu83"
-valid=false
+path="res://.godot/imported/scottish_bettor.png-af2ba758308e218e1462f100f854bccc.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/scottish_bettor.png"
+dest_files=["res://.godot/imported/scottish_bettor.png-af2ba758308e218e1462f100f854bccc.ctex"]
 
 [params]
 

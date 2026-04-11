@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dus2g3lmveido"
-valid=false
+path="res://.godot/imported/bengal_kitten.png-f7bdaeabd1c541894fcf9ba4c294f30d.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/bengal_kitten.png"
+dest_files=["res://.godot/imported/bengal_kitten.png-f7bdaeabd1c541894fcf9ba4c294f30d.ctex"]
 
 [params]
 

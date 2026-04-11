@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dram0q1a1toex"
-valid=false
+path="res://.godot/imported/siamese_screamer.png-d1bfa153093308df99a6aec8f3abfb3a.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/siamese_screamer.png"
+dest_files=["res://.godot/imported/siamese_screamer.png-d1bfa153093308df99a6aec8f3abfb3a.ctex"]
 
 [params]
 

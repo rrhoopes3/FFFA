@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bq6h5doagd1ei"
-valid=false
+path="res://.godot/imported/bengal_stalker.png-04500f4025266fa02f2d1faaa61ba5d6.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/bengal_stalker.png"
+dest_files=["res://.godot/imported/bengal_stalker.png-04500f4025266fa02f2d1faaa61ba5d6.ctex"]
 
 [params]
 

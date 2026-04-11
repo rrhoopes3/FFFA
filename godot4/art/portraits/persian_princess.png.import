@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bqpqklqkionay"
-valid=false
+path="res://.godot/imported/persian_princess.png-113153382285b830497f03b4e1640ce8.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/persian_princess.png"
+dest_files=["res://.godot/imported/persian_princess.png-113153382285b830497f03b4e1640ce8.ctex"]
 
 [params]
 

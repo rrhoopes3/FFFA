@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cr8k6irp3pehs"
-valid=false
+path="res://.godot/imported/siamese_opera.png-86b19988e15dfa4eed5efc5121749aa6.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/siamese_opera.png"
+dest_files=["res://.godot/imported/siamese_opera.png-86b19988e15dfa4eed5efc5121749aa6.ctex"]
 
 [params]
 

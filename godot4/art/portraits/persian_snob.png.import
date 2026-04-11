@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cdd0gpmc8jumx"
-valid=false
+path="res://.godot/imported/persian_snob.png-4284994913ce30ae72005d04dd0555bd.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/persian_snob.png"
+dest_files=["res://.godot/imported/persian_snob.png-4284994913ce30ae72005d04dd0555bd.ctex"]
 
 [params]
 

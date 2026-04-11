@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dad1bp5w8to7o"
-valid=false
+path="res://.godot/imported/ragdoll_dreamer.png-47876deda969217f89c430f9c68e4c97.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/ragdoll_dreamer.png"
+dest_files=["res://.godot/imported/ragdoll_dreamer.png-47876deda969217f89c430f9c68e4c97.ctex"]
 
 [params]
 

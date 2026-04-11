@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://8g3h5juaewp8"
-valid=false
+path="res://.godot/imported/bengal_assassin.png-f1b1d65140b812ac48340ea30b6f127d.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/bengal_assassin.png"
+dest_files=["res://.godot/imported/bengal_assassin.png-f1b1d65140b812ac48340ea30b6f127d.ctex"]
 
 [params]
 

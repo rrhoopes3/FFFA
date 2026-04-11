@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cp2ae6nv8n052"
-valid=false
+path="res://.godot/imported/scottish_dealer.png-6de4edc4e4c0afe259dc057bb72c8e14.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/scottish_dealer.png"
+dest_files=["res://.godot/imported/scottish_dealer.png-6de4edc4e4c0afe259dc057bb72c8e14.ctex"]
 
 [params]
 

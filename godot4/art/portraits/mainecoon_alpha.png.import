@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dk6evgm1116ko"
-valid=false
+path="res://.godot/imported/mainecoon_alpha.png-22c0e2541aea35fdae66ac695fea6b14.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/mainecoon_alpha.png"
+dest_files=["res://.godot/imported/mainecoon_alpha.png-22c0e2541aea35fdae66ac695fea6b14.ctex"]
 
 [params]
 

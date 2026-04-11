@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://clubpr1cnwj2e"
-valid=false
+path="res://.godot/imported/sphynx_warmer.png-55567ca56b23c9b0e7f5b0c3932dab61.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/sphynx_warmer.png"
+dest_files=["res://.godot/imported/sphynx_warmer.png-55567ca56b23c9b0e7f5b0c3932dab61.ctex"]
 
 [params]
 

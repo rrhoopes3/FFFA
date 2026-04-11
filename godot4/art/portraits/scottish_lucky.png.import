@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cl23cayb1y2px"
-valid=false
+path="res://.godot/imported/scottish_lucky.png-092974a467a26e270c77ace5180f1a6d.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/scottish_lucky.png"
+dest_files=["res://.godot/imported/scottish_lucky.png-092974a467a26e270c77ace5180f1a6d.ctex"]
 
 [params]
 

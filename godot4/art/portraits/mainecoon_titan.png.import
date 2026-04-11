@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dhxcba65mmj2y"
-valid=false
+path="res://.godot/imported/mainecoon_titan.png-c3db69fbb01a6da568359ee7d25a3bc9.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/mainecoon_titan.png"
+dest_files=["res://.godot/imported/mainecoon_titan.png-c3db69fbb01a6da568359ee7d25a3bc9.ctex"]
 
 [params]
 

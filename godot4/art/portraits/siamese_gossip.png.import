@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dsvbq1yme613e"
-valid=false
+path="res://.godot/imported/siamese_gossip.png-6f1c08c09073bdee944ada47234961f9.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/siamese_gossip.png"
+dest_files=["res://.godot/imported/siamese_gossip.png-6f1c08c09073bdee944ada47234961f9.ctex"]
 
 [params]
 

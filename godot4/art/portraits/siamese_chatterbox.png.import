@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://iau7cu5gj2qt"
-valid=false
+path="res://.godot/imported/siamese_chatterbox.png-765434edafcd71a1b89533262109ec3b.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/siamese_chatterbox.png"
+dest_files=["res://.godot/imported/siamese_chatterbox.png-765434edafcd71a1b89533262109ec3b.ctex"]
 
 [params]
 

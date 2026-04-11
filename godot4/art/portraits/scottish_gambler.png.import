@@ -3,11 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cfr27hu407toy"
-valid=false
+path="res://.godot/imported/scottish_gambler.png-da9f631bf9cac5a991d94bfb00203c39.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://art/portraits/scottish_gambler.png"
+dest_files=["res://.godot/imported/scottish_gambler.png-da9f631bf9cac5a991d94bfb00203c39.ctex"]
 
 [params]
 
