@@ -1,20 +1,26 @@
 """
-build_units.py — procedural chibi-cat builder for FFFA M4.
+build_units.py — procedural chibi-cat builder for FFFA.
 
 Run inside Blender (via the BlenderMCP execute_blender_code tool, or as a
 script in the Text Editor). Generates one .glb per UNIT_CONFIGS entry into
-godot4/art/units/. Each cat is built from primitives (spheres / cubes / cones)
-with per-unit color config, joined into a single mesh, and exported with the
-active object set so headless gltf2 doesn't choke.
+godot4/art/units/. Each cat is built from primitives (spheres, cones,
+cylinders) plus a bezier-curve tail, joined into a single mesh with multiple
+material surfaces, and exported with the active object set so headless gltf2
+doesn't choke.
+
+v2 detail pass (polish): rounded cylinder legs with foot overhangs, tapered
+bezier tail, larger eyes with pupils + highlights, inner-ear pink, whiskers,
+chin, cheek tufts for fluffy breeds, multi-cone ear tufts for mainecoon,
+metallic accent for tank collars, AgX-friendly material roughness.
 
 Faction visual conventions
 --------------------------
 - Alley         gritty greys, varied solid/tabby/tuxedo, often torn ear
-- Persian       cream/white, fluffy (extra fluff sphere), short ear
+- Persian       cream/white, fluffy (ruff + cheek tufts), short ear
 - Siamese       cream body with darker "points" (face/ears/legs/tail) — colorpoint
-- MaineCoon     brown/rust, oversized body, ear tufts (extra ear cone)
+- MaineCoon     brown/rust, oversized body, triple-cone ear tufts
 - Bengal        golden orange with darker stripe accent
-- Sphynx        pinkish hairless skin (slightly translucent eye shine)
+- Sphynx        pinkish hairless skin (no whiskers, lower roughness)
 - ScottishFold  greys, folded ears (cones rotated forward + scaled flat)
 - Ragdoll       light blue-grey body with darker face/ears/feet points
 
@@ -134,17 +140,19 @@ UNIT_CONFIGS = {
 
 # ─── Material helpers ───────────────────────────────────────────────────────
 
-def make_mat(name, rgb, emission=None, alpha=1.0):
+def make_mat(name, rgb, emission=None, emission_strength=1.8,
+             roughness=0.78, metallic=0.0, alpha=1.0):
     mat = bpy.data.materials.new(name=name)
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
     if bsdf:
         bsdf.inputs["Base Color"].default_value = (*rgb, alpha)
-        bsdf.inputs["Roughness"].default_value = 0.7
-        # 4.x renames Specular → Specular IXR / Specular Tint, leave defaults
+        bsdf.inputs["Roughness"].default_value = roughness
+        if "Metallic" in bsdf.inputs:
+            bsdf.inputs["Metallic"].default_value = metallic
         if emission is not None and "Emission Color" in bsdf.inputs:
             bsdf.inputs["Emission Color"].default_value = (*emission, 1.0)
-            bsdf.inputs["Emission Strength"].default_value = 1.5
+            bsdf.inputs["Emission Strength"].default_value = emission_strength
     return mat
 
 
@@ -162,11 +170,13 @@ def clear_scene():
     bpy.ops.object.delete(use_global=False)
     for block in list(bpy.data.meshes):
         bpy.data.meshes.remove(block)
+    for block in list(bpy.data.curves):
+        bpy.data.curves.remove(block)
     for block in list(bpy.data.materials):
         bpy.data.materials.remove(block)
 
 
-def add_uv_sphere(name, location, scale, segments=20, rings=16):
+def add_uv_sphere(name, location, scale, segments=24, rings=16):
     bpy.ops.mesh.primitive_uv_sphere_add(segments=segments, ring_count=rings, radius=1.0, location=location)
     obj = bpy.context.active_object
     obj.name = name
@@ -175,7 +185,7 @@ def add_uv_sphere(name, location, scale, segments=20, rings=16):
     return obj
 
 
-def add_cone(name, location, scale, vertices=16):
+def add_cone(name, location, scale, vertices=20):
     bpy.ops.mesh.primitive_cone_add(vertices=vertices, radius1=1.0, radius2=0.0, depth=2.0, location=location)
     obj = bpy.context.active_object
     obj.name = name
@@ -184,16 +194,60 @@ def add_cone(name, location, scale, vertices=16):
     return obj
 
 
-def add_cube(name, location, scale):
-    bpy.ops.mesh.primitive_cube_add(size=1.0, location=location)
+def add_cylinder(name, location, scale, vertices=16):
+    bpy.ops.mesh.primitive_cylinder_add(vertices=vertices, radius=1.0, depth=2.0, location=location)
     obj = bpy.context.active_object
     obj.name = name
     obj.scale = scale
+    bpy.ops.object.shade_smooth()
     return obj
 
 
+def add_tail_curve(name, control_pts, radii, bevel_res=6, res_u=8):
+    """Tapered tube from a bezier curve. control_pts: [(x,y,z), ...]; radii
+    parallel list per control point. Auto-handles; converted to mesh so it
+    joins with the rest of the cat."""
+    curve_data = bpy.data.curves.new(name=f"{name}_curve", type='CURVE')
+    curve_data.dimensions = '3D'
+    curve_data.resolution_u = res_u
+    curve_data.bevel_mode = 'ROUND'
+    curve_data.bevel_depth = 1.0
+    curve_data.bevel_resolution = bevel_res
+    spline = curve_data.splines.new('BEZIER')
+    spline.bezier_points.add(len(control_pts) - 1)
+    for i, pt in enumerate(control_pts):
+        bp = spline.bezier_points[i]
+        bp.co = pt
+        bp.handle_left_type = 'AUTO'
+        bp.handle_right_type = 'AUTO'
+        bp.radius = radii[i]
+    curve_obj = bpy.data.objects.new(name, curve_data)
+    bpy.context.collection.objects.link(curve_obj)
+    bpy.ops.object.select_all(action='DESELECT')
+    curve_obj.select_set(True)
+    bpy.context.view_layer.objects.active = curve_obj
+    bpy.ops.object.convert(target='MESH')
+    mesh_obj = bpy.context.active_object
+    bpy.ops.object.shade_smooth()
+    return mesh_obj
+
+
+# ─── Shared palette for detail features ────────────────────────────────────
+INNER_EAR_COL = (0.96, 0.68, 0.72)
+PAW_PAD_COL   = (0.80, 0.48, 0.52)
+PUPIL_COL     = (0.02, 0.02, 0.03)
+HILITE_COL    = (1.00, 1.00, 1.00)
+WHISKER_COL   = (0.96, 0.95, 0.92)
+
+
 def build_cat(unit_id, cfg):
-    """Procedural chibi cat. Returns the joined MESH object."""
+    """Procedural chibi cat v2. Returns the joined MESH object.
+
+    Adds over v1: rounded cylinder legs + foot overhang spheres, pupils and
+    eye highlights, inner-ear pink, whiskers, chin, cheek tufts for fluffy,
+    triple-cone ear tufts for mainecoon, tapered bezier tail, metallic tank
+    collar with dangling tag.
+    """
     fur_main = cfg["fur_main"]
     fur_belly = cfg["fur_belly"]
     accent = cfg["accent"]
@@ -205,125 +259,229 @@ def build_cat(unit_id, cfg):
     ear_tufts = cfg.get("ear_tufts", False)
     torn = cfg.get("torn_ear", False)
     tank = cfg.get("tank", False)
-    points = cfg.get("points", None)  # Darker color used for face/ears/legs/tail
+    hairless = cfg.get("hairless", False)
+    points = cfg.get("points", None)
 
     point_color = points if points else fur_main
+    body_rough = 0.45 if hairless else 0.80
 
-    # Material lookups (per-cat — small dupes are fine, joined later)
-    m_main = make_mat(f"{unit_id}_fur", fur_main)
-    m_belly = make_mat(f"{unit_id}_belly", fur_belly)
-    m_accent = make_mat(f"{unit_id}_accent", accent)
-    m_eye = make_mat(f"{unit_id}_eye", eye_color, emission=eye_color)
-    m_point = make_mat(f"{unit_id}_point", point_color)
+    m_main    = make_mat(f"{unit_id}_fur",     fur_main,  roughness=body_rough)
+    m_belly   = make_mat(f"{unit_id}_belly",   fur_belly, roughness=body_rough)
+    m_accent  = make_mat(f"{unit_id}_accent",  accent,    roughness=0.55,
+                         metallic=(0.8 if tank else 0.0))
+    m_eye     = make_mat(f"{unit_id}_eye",     eye_color, emission=eye_color,
+                         emission_strength=2.8, roughness=0.08)
+    m_pupil   = make_mat(f"{unit_id}_pupil",   PUPIL_COL, roughness=0.35)
+    m_hilite  = make_mat(f"{unit_id}_hilite",  HILITE_COL,
+                         emission=HILITE_COL, emission_strength=3.5, roughness=0.08)
+    m_point   = make_mat(f"{unit_id}_point",   point_color, roughness=body_rough)
+    m_inner   = make_mat(f"{unit_id}_inner",   INNER_EAR_COL, roughness=0.55)
+    m_paw     = make_mat(f"{unit_id}_paw",     PAW_PAD_COL,   roughness=0.5)
+    m_whisker = make_mat(f"{unit_id}_whisker", WHISKER_COL,   roughness=0.3)
 
     parts = []
 
-    # Body — flatter and wider for tanks
+    # ── Body/belly ──────────────────────────────────────────────────────
     body_w = 0.55 * s * (1.15 if tank else 1.0)
     body_h = 0.50 * s * (1.10 if tank else 1.0)
-    body = add_uv_sphere("Body", (0, 0, 0.55 * s), (body_w, body_w * 0.85, body_h))
-    assign_mat(body, m_main)
-    parts.append(body)
+    body_z = 0.52 * s
 
-    # Belly highlight (slightly forward, slightly smaller)
-    belly = add_uv_sphere("Belly", (0, -body_w * 0.20, 0.45 * s), (body_w * 0.65, body_w * 0.55, body_h * 0.70))
-    assign_mat(belly, m_belly)
-    parts.append(belly)
+    body = add_uv_sphere("Body", (0, 0, body_z),
+                         (body_w, body_w * 0.92, body_h), segments=32, rings=22)
+    assign_mat(body, m_main); parts.append(body)
 
-    # Fluff ring for fluffy breeds (extra sphere around shoulders)
+    belly = add_uv_sphere("Belly",
+                          (0, -body_w * 0.25, body_z - body_h * 0.10),
+                          (body_w * 0.72, body_w * 0.58, body_h * 0.74),
+                          segments=24, rings=16)
+    assign_mat(belly, m_belly); parts.append(belly)
+
     if fluffy:
-        fluff = add_uv_sphere("Fluff", (0, 0, 0.85 * s), (body_w * 1.10, body_w * 0.95, body_h * 0.65))
-        assign_mat(fluff, m_main)
-        parts.append(fluff)
+        ruff = add_uv_sphere("Ruff",
+                             (0, -body_w * 0.08, body_z + body_h * 0.62),
+                             (body_w * 0.92, body_w * 0.82, body_h * 0.32),
+                             segments=26, rings=16)
+        assign_mat(ruff, m_main); parts.append(ruff)
 
-    # Head
-    head_r = 0.42 * s
-    head_z = 1.05 * s + (0.05 if fluffy else 0.0)
-    head = add_uv_sphere("Head", (0, -0.05 * s, head_z), (head_r, head_r, head_r))
-    assign_mat(head, m_point if points else m_main)
-    parts.append(head)
+    # ── Head ───────────────────────────────────────────────────────────
+    head_r = 0.46 * s
+    head_z = 1.10 * s + (0.02 if fluffy else 0.0)
+    head_y = -0.08 * s
+    head = add_uv_sphere("Head", (0, head_y, head_z),
+                         (head_r * 1.02, head_r * 0.98, head_r * 0.97),
+                         segments=32, rings=22)
+    assign_mat(head, m_point if points else m_main); parts.append(head)
 
-    # Muzzle
-    muzzle = add_uv_sphere("Muzzle", (0, -head_r * 0.85, head_z - head_r * 0.18), (head_r * 0.50, head_r * 0.40, head_r * 0.38))
-    assign_mat(muzzle, m_belly)
-    parts.append(muzzle)
+    # Cheek tufts for fluffy non-hairless (persian, mainecoon, ragdoll)
+    if fluffy and not hairless:
+        for sign, nm in ((-1, "CheekL"), (1, "CheekR")):
+            c = add_uv_sphere(nm,
+                              (sign * head_r * 0.85, head_y - head_r * 0.35,
+                               head_z - head_r * 0.12),
+                              (head_r * 0.32, head_r * 0.30, head_r * 0.30),
+                              segments=16, rings=12)
+            assign_mat(c, m_belly); parts.append(c)
 
-    # Nose
-    nose = add_uv_sphere("Nose", (0, -head_r * 1.20, head_z - head_r * 0.10), (head_r * 0.10, head_r * 0.08, head_r * 0.08))
-    assign_mat(nose, m_accent)
-    parts.append(nose)
+    chin = add_uv_sphere("Chin",
+                         (0, head_y - head_r * 0.62, head_z - head_r * 0.48),
+                         (head_r * 0.36, head_r * 0.28, head_r * 0.20),
+                         segments=16, rings=12)
+    assign_mat(chin, m_belly); parts.append(chin)
 
-    # Eyes
-    eye_x = head_r * 0.40
-    eye_y = -head_r * 0.85
+    muz_z = head_z - head_r * 0.22
+    muzzle = add_uv_sphere("Muzzle",
+                           (0, head_y - head_r * 0.88, muz_z),
+                           (head_r * 0.56, head_r * 0.44, head_r * 0.40),
+                           segments=20, rings=14)
+    assign_mat(muzzle, m_belly); parts.append(muzzle)
+
+    nose = add_uv_sphere("Nose",
+                         (0, head_y - head_r * 1.22, muz_z + head_r * 0.06),
+                         (head_r * 0.16, head_r * 0.11, head_r * 0.10),
+                         segments=16, rings=12)
+    assign_mat(nose, m_accent); parts.append(nose)
+
+    # ── Eyes (iris + vertical pupil + highlight) ───────────────────────
+    eye_x = head_r * 0.44
+    eye_y = head_y - head_r * 0.78
     eye_z = head_z + head_r * 0.10
-    eye_r = head_r * 0.13
-    le = add_uv_sphere("EyeL", (-eye_x, eye_y, eye_z), (eye_r, eye_r, eye_r))
-    re = add_uv_sphere("EyeR", ( eye_x, eye_y, eye_z), (eye_r, eye_r, eye_r))
-    assign_mat(le, m_eye)
-    assign_mat(re, m_eye)
-    parts.append(le)
-    parts.append(re)
+    eye_r = head_r * 0.24
+    for sign, nm in ((-1, "EyeL"), (1, "EyeR")):
+        e = add_uv_sphere(nm,
+                          (sign * eye_x, eye_y, eye_z),
+                          (eye_r, eye_r * 0.93, eye_r * 1.05),
+                          segments=22, rings=16)
+        assign_mat(e, m_eye); parts.append(e)
+        p = add_uv_sphere(nm + "Pupil",
+                          (sign * eye_x, eye_y - eye_r * 0.72, eye_z),
+                          (eye_r * 0.38, eye_r * 0.26, eye_r * 0.85),
+                          segments=16, rings=12)
+        assign_mat(p, m_pupil); parts.append(p)
+        hl = add_uv_sphere(nm + "HL",
+                           (sign * (eye_x - eye_r * 0.30),
+                            eye_y - eye_r * 0.82,
+                            eye_z + eye_r * 0.45),
+                           (eye_r * 0.22, eye_r * 0.15, eye_r * 0.22),
+                           segments=12, rings=8)
+        assign_mat(hl, m_hilite); parts.append(hl)
 
-    # Ears
-    ear_h = 0.20 * s if short_ear else 0.32 * s
-    ear_r = 0.16 * s
-    ear_x = head_r * 0.55
-    ear_y = -head_r * 0.10
-    ear_z = head_z + head_r * 0.85 - (0.05 if short_ear else 0.0)
+    # ── Whiskers (skipped on hairless) ─────────────────────────────────
+    if not hairless:
+        for sign, side in ((-1, "L"), (1, "R")):
+            for i, ang in enumerate((-0.24, 0.0, 0.24)):
+                wlen = head_r * 0.45
+                wx = sign * (head_r * 0.48 + wlen * 0.40 * math.cos(ang))
+                wy = head_y - head_r * 1.02 - wlen * 0.28
+                wz = muz_z + ang * head_r * 0.30
+                w = add_cone(f"Whisker{side}{i}",
+                             (wx, wy, wz),
+                             (0.010 * s, 0.010 * s, wlen * 0.55),
+                             vertices=6)
+                w.rotation_euler = (math.radians(90), 0,
+                                    sign * math.radians(78) + ang * 0.6)
+                assign_mat(w, m_whisker); parts.append(w)
+
+    # ── Ears + inner pink + optional tufts ─────────────────────────────
+    ear_h = 0.22 * s if short_ear else 0.38 * s
+    ear_r = 0.19 * s
+    ear_x = head_r * 0.60
+    ear_y = head_y - head_r * 0.05
+    ear_z = head_z + head_r * 0.82 - (0.05 if short_ear else 0.0)
     for sign, name in ((-1, "EarL"), (1, "EarR")):
         if torn and name == "EarR":
-            # "Torn" — half-height cone
-            ear = add_cone(name, (sign * ear_x, ear_y, ear_z - ear_h * 0.15), (ear_r, ear_r, ear_h * 0.35))
+            ear = add_cone(name,
+                           (sign * ear_x, ear_y, ear_z - ear_h * 0.22),
+                           (ear_r, ear_r * 0.9, ear_h * 0.32), vertices=18)
         else:
-            ear = add_cone(name, (sign * ear_x, ear_y, ear_z), (ear_r, ear_r, ear_h * 0.5))
+            ear = add_cone(name,
+                           (sign * ear_x, ear_y, ear_z),
+                           (ear_r, ear_r * 0.9, ear_h * 0.55), vertices=22)
         assign_mat(ear, m_point if points else m_main)
         if fold_ear:
-            ear.rotation_euler[0] = math.radians(60.0)  # Fold forward
-            ear.scale[2] *= 0.6
+            ear.rotation_euler[0] = math.radians(70.0)
+            ear.scale[2] *= 0.50
         parts.append(ear)
-        if ear_tufts:
-            tuft = add_cone(f"{name}Tuft", (sign * ear_x, ear_y, ear_z + ear_h * 0.55), (ear_r * 0.45, ear_r * 0.45, ear_h * 0.30))
-            assign_mat(tuft, m_belly)
-            parts.append(tuft)
 
-    # Limbs — four little stubby cubes (points-colored if colorpoint)
+        if not (torn and name == "EarR"):
+            inner = add_cone(f"{name}Inner",
+                             (sign * ear_x, ear_y - ear_r * 0.10,
+                              ear_z - ear_h * 0.08),
+                             (ear_r * 0.58, ear_r * 0.52, ear_h * 0.46),
+                             vertices=18)
+            if fold_ear:
+                inner.rotation_euler[0] = math.radians(70.0)
+                inner.scale[2] *= 0.50
+            assign_mat(inner, m_inner); parts.append(inner)
+
+        if ear_tufts:
+            for j, offy in enumerate((0.0, ear_r * 0.18, -ear_r * 0.18)):
+                tx = sign * (ear_x + offy * 0.5)
+                ty = ear_y + offy
+                tz = ear_z + ear_h * (0.55 + j * 0.06)
+                tuft = add_cone(f"{name}Tuft{j}",
+                                (tx, ty, tz),
+                                (ear_r * 0.30, ear_r * 0.30, ear_h * 0.40),
+                                vertices=10)
+                assign_mat(tuft, m_belly); parts.append(tuft)
+
+    # ── Legs: rounded cylinders + foot-overhang sphere + paw pad ───────
     limb_mat = m_point if points else m_main
-    leg_h = 0.20 * s
-    leg_w = 0.14 * s
-    leg_y_f = -body_w * 0.50
+    leg_h = 0.26 * s
+    leg_r = 0.12 * s
+    leg_y_f = -body_w * 0.48
     leg_y_b =  body_w * 0.50
     leg_x   =  body_w * 0.55
-    leg_z   = leg_h * 0.5
+    leg_z   = leg_h * 0.5 + 0.01
     for (lx, ly, name) in (
         (-leg_x, leg_y_f, "LegFL"),
         ( leg_x, leg_y_f, "LegFR"),
         (-leg_x, leg_y_b, "LegBL"),
         ( leg_x, leg_y_b, "LegBR"),
     ):
-        leg = add_cube(name, (lx, ly, leg_z), (leg_w, leg_w, leg_h))
-        assign_mat(leg, limb_mat)
-        parts.append(leg)
+        leg = add_cylinder(name, (lx, ly, leg_z),
+                           (leg_r, leg_r, leg_h * 0.5), vertices=16)
+        assign_mat(leg, limb_mat); parts.append(leg)
+        foot = add_uv_sphere(f"{name}Foot",
+                             (lx, ly - leg_r * 0.30, leg_r * 0.40),
+                             (leg_r * 1.20, leg_r * 1.50, leg_r * 0.60),
+                             segments=16, rings=12)
+        assign_mat(foot, limb_mat); parts.append(foot)
+        pad = add_uv_sphere(f"{name}Pad",
+                            (lx, ly - leg_r * 0.10, 0.005),
+                            (leg_r * 0.70, leg_r * 0.75, leg_r * 0.10),
+                            segments=12, rings=8)
+        assign_mat(pad, m_paw); parts.append(pad)
 
-    # Tail — three stacked spheres curling up behind
-    tail_mat = m_point if points else m_main
-    tail_segs = [
-        (0.0, body_w * 0.95, 0.55 * s, 0.10 * s),
-        (0.0, body_w * 1.20, 0.78 * s, 0.085 * s),
-        (0.0, body_w * 1.30, 1.00 * s, 0.075 * s),
+    # ── Tail: bezier curve with tapered bevel ──────────────────────────
+    # Peak kept under 1.55*body_h to avoid clipping the HP bar on large units.
+    base_r = 0.13 * s
+    tail_pts = [
+        (0.0, body_w * 0.35, body_z + body_h * 0.10),
+        (0.0, body_w * 0.75, body_z + body_h * 0.50),
+        (0.0, body_w * 1.05, body_z + body_h * 0.95),
+        (0.0, body_w * 1.00, body_z + body_h * 1.40),
+        (0.0, body_w * 0.80, body_z + body_h * 1.55),
+        (0.0, body_w * 0.55, body_z + body_h * 1.60),
     ]
-    for i, (tx, ty, tz, tr) in enumerate(tail_segs):
-        seg = add_uv_sphere(f"Tail{i}", (tx, ty, tz), (tr, tr, tr))
-        assign_mat(seg, tail_mat)
-        parts.append(seg)
+    tail_radii = [base_r * 1.00, base_r * 0.95, base_r * 0.82,
+                  base_r * 0.65, base_r * 0.48, base_r * 0.22]
+    tail = add_tail_curve("Tail", tail_pts, tail_radii)
+    assign_mat(tail, m_point if points else m_main); parts.append(tail)
 
-    # Tank: extra accent collar/disc on shoulders
+    # ── Tank collar + dangling tag ─────────────────────────────────────
     if tank:
-        collar = add_uv_sphere("Collar", (0, -body_w * 0.30, 0.92 * s + (0.05 if fluffy else 0.0)), (body_w * 0.50, body_w * 0.50, 0.06 * s))
-        assign_mat(collar, m_accent)
-        parts.append(collar)
+        collar = add_uv_sphere("Collar",
+                               (0, -body_w * 0.35, body_z + body_h * 0.55),
+                               (body_w * 0.62, body_w * 0.56, 0.06 * s),
+                               segments=26, rings=12)
+        assign_mat(collar, m_accent); parts.append(collar)
+        tag = add_uv_sphere("Tag",
+                            (0, -body_w * 0.94, body_z + body_h * 0.36),
+                            (0.08 * s, 0.02 * s, 0.08 * s),
+                            segments=16, rings=12)
+        assign_mat(tag, m_accent); parts.append(tag)
 
-    # Join everything
+    # Join everything into a single mesh with multiple material surfaces
     bpy.ops.object.select_all(action="DESELECT")
     for p in parts:
         p.select_set(True)
