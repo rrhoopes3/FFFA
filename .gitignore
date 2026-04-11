@@ -1,1 +1,15 @@
 node_modules/
+
+# Local tools (Godot 4.4 binary, ~120 MB) — installed per-machine, never committed
+tools/
+
+# Debug screenshots and scratch
+tmp/
+
+# Local Claude Code state
+.claude/
+
+# Godot import cache
+godot4/.godot/
+godot/.godot/
+*.blend1
