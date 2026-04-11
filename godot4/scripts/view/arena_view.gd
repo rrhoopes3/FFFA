@@ -264,29 +264,28 @@ func _on_unit_died(uid: int) -> void:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  PARTICLE VFX — one-shot GPUParticles3D spawned on signal
+#  PARTICLE VFX — one-shot CPUParticles3D spawned on signal
+#  (CPUParticles3D works on all renderers including Compatibility/WebGL)
 # ═══════════════════════════════════════════════════════════════════════════
 
 func _spawn_hit_spark(world_pos: Vector3, is_crit: bool) -> void:
-	var p := GPUParticles3D.new()
-	var mat := ParticleProcessMaterial.new()
-	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	mat.emission_sphere_radius = 0.05
-	mat.direction = Vector3(0, 1, 0)
-	mat.spread = 180.0
-	mat.initial_velocity_min = 2.2
-	mat.initial_velocity_max = 4.5 if is_crit else 3.2
-	mat.gravity = Vector3(0, -7.0, 0)
-	mat.scale_min = 0.07
-	mat.scale_max = 0.14 if is_crit else 0.11
-	mat.color = Color(1.0, 0.75, 0.25) if is_crit else Color(1.0, 0.95, 0.70)
-	p.process_material = mat
+	var p := CPUParticles3D.new()
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 0.05
+	p.direction = Vector3(0, 1, 0)
+	p.spread = 180.0
+	p.initial_velocity_min = 2.2
+	p.initial_velocity_max = 4.5 if is_crit else 3.2
+	p.gravity = Vector3(0, -7.0, 0)
+	p.scale_amount_min = 0.07
+	p.scale_amount_max = 0.14 if is_crit else 0.11
+	p.color = Color(1.0, 0.75, 0.25) if is_crit else Color(1.0, 0.95, 0.70)
 	var sm := SphereMesh.new()
 	sm.radius = 0.05
 	sm.height = 0.10
 	sm.radial_segments = 6
 	sm.rings = 3
-	p.draw_pass_1 = sm
+	p.mesh = sm
 	p.amount = 22 if is_crit else 12
 	p.lifetime = 0.6
 	p.one_shot = true
@@ -298,25 +297,23 @@ func _spawn_hit_spark(world_pos: Vector3, is_crit: bool) -> void:
 
 
 func _spawn_death_puff(world_pos: Vector3) -> void:
-	var p := GPUParticles3D.new()
-	var mat := ParticleProcessMaterial.new()
-	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
-	mat.emission_sphere_radius = 0.12
-	mat.direction = Vector3(0, 1, 0)
-	mat.spread = 45.0
-	mat.initial_velocity_min = 0.8
-	mat.initial_velocity_max = 1.6
-	mat.gravity = Vector3(0, 0.4, 0)  # drifts up
-	mat.scale_min = 0.25
-	mat.scale_max = 0.45
-	mat.color = Color(0.85, 0.85, 0.90, 0.85)
-	p.process_material = mat
+	var p := CPUParticles3D.new()
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 0.12
+	p.direction = Vector3(0, 1, 0)
+	p.spread = 45.0
+	p.initial_velocity_min = 0.8
+	p.initial_velocity_max = 1.6
+	p.gravity = Vector3(0, 0.4, 0)  # drifts up
+	p.scale_amount_min = 0.25
+	p.scale_amount_max = 0.45
+	p.color = Color(0.85, 0.85, 0.90, 0.85)
 	var sm := SphereMesh.new()
 	sm.radius = 0.22
 	sm.height = 0.40
 	sm.radial_segments = 6
 	sm.rings = 4
-	p.draw_pass_1 = sm
+	p.mesh = sm
 	p.amount = 18
 	p.lifetime = 1.1
 	p.one_shot = true

@@ -38,7 +38,7 @@ const COST_COLORS := {
 const BENCH_SIZE := 9
 const SHOP_SIZE := 5
 const CARD_W := 130.0
-const CARD_H := 96.0
+const CARD_H := 160.0
 const SLOT_W := 92.0
 const SLOT_H := 96.0
 
@@ -299,7 +299,7 @@ func _build_shop_row() -> void:
 	var shop_w := SHOP_SIZE * (CARD_W + 8) + 16
 	bar.offset_left = -shop_w * 0.5
 	bar.offset_right = shop_w * 0.5
-	bar.offset_top = -120
+	bar.offset_top = -184
 	bar.offset_bottom = -12
 	add_child(bar)
 
@@ -491,8 +491,33 @@ func _make_shop_card(index: int) -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(CARD_W, CARD_H)
 	card.text = ""
+	card.clip_contents = true
 	card.set_meta("index", index)
 	card.pressed.connect(_on_shop_card_pressed.bind(index))
+
+	# Portrait image — fills top portion of the card
+	var portrait := TextureRect.new()
+	portrait.name = "Portrait"
+	portrait.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait.custom_minimum_size = Vector2(CARD_W - 12, 90)
+	portrait.position = Vector2(6, 4)
+	portrait.size = Vector2(CARD_W - 12, 90)
+	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(portrait)
+
+	# Label for name/faction/cost — sits below the portrait
+	var info := Label.new()
+	info.name = "Info"
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	info.position = Vector2(0, 96)
+	info.size = Vector2(CARD_W, CARD_H - 96)
+	info.add_theme_font_size_override("font_size", 11)
+	info.add_theme_color_override("font_color", Color("#F8FAFC"))
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(info)
+
 	return card
 
 
@@ -526,8 +551,12 @@ func _refresh_shop() -> void:
 
 
 func _paint_card(card: Button, unit_id: String) -> void:
+	var portrait: TextureRect = card.get_node_or_null("Portrait")
+	var info: Label = card.get_node_or_null("Info")
 	if unit_id.is_empty():
 		card.text = ""
+		if info: info.text = ""
+		if portrait: portrait.texture = null
 		card.disabled = true
 		card.modulate = Color(0.4, 0.4, 0.4, 0.5)
 		card.add_theme_stylebox_override("normal", _styled_panel(Color(0.10, 0.12, 0.18, 0.6)))
@@ -538,7 +567,16 @@ func _paint_card(card: Button, unit_id: String) -> void:
 	var faction: String = data.get("faction", "")
 	var cost: int = int(data.get("cost", 1))
 	var name_str: String = data.get("name", unit_id)
-	card.text = "%s\n[%s]\n%dg" % [name_str, faction, cost]
+	card.text = ""  # text lives in the Info label now
+	if info:
+		info.text = "%s\n[%s] %dg" % [name_str, faction, cost]
+	# Load portrait texture
+	if portrait:
+		var path := "res://art/portraits/%s.png" % unit_id
+		if ResourceLoader.exists(path):
+			portrait.texture = load(path)
+		else:
+			portrait.texture = null
 	card.modulate = Color(1, 1, 1, 1)
 	card.disabled = GameState.gold < cost
 	var bg := COST_COLORS.get(cost, Color("#475569")) as Color
