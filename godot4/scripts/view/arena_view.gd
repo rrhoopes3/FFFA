@@ -18,10 +18,13 @@ const HexGrid = preload("res://scripts/view/hex_grid_3d.gd")
 @onready var hex_grid: Node3D = $HexGrid
 @onready var camera: Camera3D = $Camera3D
 
-# Camera placed behind the player half (positive Z), high enough to see the
-# whole 7×8 board. Tuned for the M4 roster shot; M5 keeps the same framing.
+# Base camera framing (measured from the look-at point). During combat we
+# rotate this offset around CAMERA_LOOK_AT on the Y axis for a slow orbit,
+# and scale it slightly for a "punch in" dolly zoom.
 const CAMERA_POS := Vector3(0, 6.5, 7.0)
 const CAMERA_LOOK_AT := Vector3(0, 0.4, 0)
+const COMBAT_ORBIT_SPEED := 0.10       # rad/sec — slow enough to be felt, not noticed
+const COMBAT_DOLLY_ZOOM := 0.82        # multiplier on the base offset during combat
 
 # Two parallel view dictionaries keyed differently. We never have both modes
 # populated at the same time — phase transitions clear one and build the other.
@@ -29,14 +32,18 @@ var shop_views: Dictionary = {}    # hex_key (String) → UnitView
 var combat_views: Dictionary = {}  # uid (int) → UnitView
 var phase: String = "shop"
 
+# Camera orbit state
+var pivot_yaw: float = 0.0
+var dolly: float = 1.0                 # tweened between 1.0 (shop) and 0.82 (combat)
+var _dolly_tween: Tween
+
 # Signal published for the 2D UI when a hex is clicked while a drag is active
 # (the drag layer asks the camera to project the cursor → hex).
 signal arena_hex_clicked(hex_key: String)
 
 
 func _ready() -> void:
-	camera.position = CAMERA_POS
-	camera.look_at(CAMERA_LOOK_AT, Vector3.UP)
+	_apply_camera_transform()
 
 	hex_grid.hex_clicked.connect(_on_hex_clicked)
 
@@ -54,6 +61,42 @@ func _ready() -> void:
 	EventBus.unit_died.connect(_on_unit_died)
 	EventBus.unit_moved.connect(_on_unit_moved)
 	EventBus.unit_ability_cast.connect(_on_unit_ability_cast)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  CAMERA RIG — slow orbit + dolly punch during combat
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _process(delta: float) -> void:
+	if phase == "combat":
+		pivot_yaw += delta * COMBAT_ORBIT_SPEED
+	_apply_camera_transform()
+
+
+func _apply_camera_transform() -> void:
+	var offset: Vector3 = (CAMERA_POS - CAMERA_LOOK_AT) * dolly
+	var rotated: Vector3 = offset.rotated(Vector3.UP, pivot_yaw)
+	camera.position = CAMERA_LOOK_AT + rotated
+	camera.look_at(CAMERA_LOOK_AT, Vector3.UP)
+
+
+func _start_combat_camera() -> void:
+	if _dolly_tween and _dolly_tween.is_valid():
+		_dolly_tween.kill()
+	_dolly_tween = create_tween()
+	_dolly_tween.tween_property(self, "dolly", COMBAT_DOLLY_ZOOM, 0.55)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+func _end_combat_camera() -> void:
+	if _dolly_tween and _dolly_tween.is_valid():
+		_dolly_tween.kill()
+	_dolly_tween = create_tween()
+	_dolly_tween.tween_property(self, "dolly", 1.0, 0.7)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	# Snap the yaw back to neutral so the next shop phase starts framed.
+	_dolly_tween.parallel().tween_property(self, "pivot_yaw", 0.0, 0.7)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -160,6 +203,7 @@ func _on_units_swapped(hex_a: String, hex_b: String) -> void:
 
 func _on_combat_started() -> void:
 	phase = "combat"
+	_start_combat_camera()
 	# Drop the shop views — combat will spawn fresh uid-keyed ones.
 	for view in shop_views.values():
 		if is_instance_valid(view):
@@ -169,6 +213,7 @@ func _on_combat_started() -> void:
 
 func _on_combat_ended(_player_won: bool) -> void:
 	phase = "shop"
+	_end_combat_camera()
 	# Drop any combat views that survived.
 	for view in combat_views.values():
 		if is_instance_valid(view):
@@ -196,11 +241,12 @@ func _on_combat_unit_spawned(uid: int, unit_id: String, hex_key: String,
 	combat_views[uid] = view
 
 
-func _on_unit_attacked(attacker_uid: int, target_uid: int, _damage: int, _is_crit: bool) -> void:
+func _on_unit_attacked(attacker_uid: int, target_uid: int, _damage: int, is_crit: bool) -> void:
 	var attacker = combat_views.get(attacker_uid, null)
 	var target = combat_views.get(target_uid, null)
 	if attacker and target:
 		attacker.play_attack(target.hex_key)
+		_spawn_hit_spark(target.global_position + Vector3(0, 0.6, 0), is_crit)
 
 
 func _on_unit_damaged(uid: int, hp: int, _max_hp: int) -> void:
@@ -212,8 +258,73 @@ func _on_unit_damaged(uid: int, hp: int, _max_hp: int) -> void:
 func _on_unit_died(uid: int) -> void:
 	var view = combat_views.get(uid, null)
 	if view:
+		_spawn_death_puff(view.global_position + Vector3(0, 0.4, 0))
 		view.die()
 		combat_views.erase(uid)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  PARTICLE VFX — one-shot GPUParticles3D spawned on signal
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _spawn_hit_spark(world_pos: Vector3, is_crit: bool) -> void:
+	var p := GPUParticles3D.new()
+	var mat := ParticleProcessMaterial.new()
+	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	mat.emission_sphere_radius = 0.05
+	mat.direction = Vector3(0, 1, 0)
+	mat.spread = 180.0
+	mat.initial_velocity_min = 2.2
+	mat.initial_velocity_max = 4.5 if is_crit else 3.2
+	mat.gravity = Vector3(0, -7.0, 0)
+	mat.scale_min = 0.07
+	mat.scale_max = 0.14 if is_crit else 0.11
+	mat.color = Color(1.0, 0.75, 0.25) if is_crit else Color(1.0, 0.95, 0.70)
+	p.process_material = mat
+	var sm := SphereMesh.new()
+	sm.radius = 0.05
+	sm.height = 0.10
+	sm.radial_segments = 6
+	sm.rings = 3
+	p.draw_pass_1 = sm
+	p.amount = 22 if is_crit else 12
+	p.lifetime = 0.6
+	p.one_shot = true
+	p.explosiveness = 1.0
+	p.position = world_pos
+	add_child(p)
+	p.restart()
+	get_tree().create_timer(1.0).timeout.connect(p.queue_free)
+
+
+func _spawn_death_puff(world_pos: Vector3) -> void:
+	var p := GPUParticles3D.new()
+	var mat := ParticleProcessMaterial.new()
+	mat.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	mat.emission_sphere_radius = 0.12
+	mat.direction = Vector3(0, 1, 0)
+	mat.spread = 45.0
+	mat.initial_velocity_min = 0.8
+	mat.initial_velocity_max = 1.6
+	mat.gravity = Vector3(0, 0.4, 0)  # drifts up
+	mat.scale_min = 0.25
+	mat.scale_max = 0.45
+	mat.color = Color(0.85, 0.85, 0.90, 0.85)
+	p.process_material = mat
+	var sm := SphereMesh.new()
+	sm.radius = 0.22
+	sm.height = 0.40
+	sm.radial_segments = 6
+	sm.rings = 4
+	p.draw_pass_1 = sm
+	p.amount = 18
+	p.lifetime = 1.1
+	p.one_shot = true
+	p.explosiveness = 0.9
+	p.position = world_pos
+	add_child(p)
+	p.restart()
+	get_tree().create_timer(2.0).timeout.connect(p.queue_free)
 
 
 func _on_unit_moved(uid: int, _from_hex: String, to_hex: String) -> void:

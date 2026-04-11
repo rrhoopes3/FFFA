@@ -59,6 +59,7 @@ var sell_zone: Panel
 var synergy_list: VBoxContainer
 var status_label: Label
 var drop_catcher: Control       # Fullscreen, mouse-pass, accepts drops over 3D
+var banner_label: Label         # Big centered overlay — FIGHT / VICTORY / DEFEAT
 
 
 func _ready() -> void:
@@ -80,6 +81,7 @@ func _ready() -> void:
 	EventBus.synergies_updated.connect(_refresh_synergies)
 	EventBus.combat_started.connect(_on_combat_started)
 	EventBus.combat_ended.connect(_on_combat_ended)
+	EventBus.banner_requested.connect(_show_banner)
 
 	# Hook up the arena's hex click → return-to-bench.
 	if arena_view == null:
@@ -123,10 +125,18 @@ func _run_autotest() -> void:
 	get_tree().create_timer(0.5).timeout.connect(_capture_placed_shot)
 	# 4. Start a fight a beat later
 	get_tree().create_timer(1.0).timeout.connect(CombatSim.start_combat)
-	# 5. Snapshot mid-combat
-	get_tree().create_timer(3.0).timeout.connect(_capture_combat_shot)
-	# 6. Quit a few seconds after combat starts (combat self-resolves)
+	# 5. Snapshot the FIGHT banner at its peak
+	get_tree().create_timer(1.4).timeout.connect(_capture_banner_shot)
+	# 6. Snapshot mid-combat (hit sparks, death puffs, camera orbit visible)
+	get_tree().create_timer(3.5).timeout.connect(_capture_combat_shot)
+	# 7. Quit a few seconds after combat starts (combat self-resolves)
 	get_tree().create_timer(20.0).timeout.connect(_capture_postcombat_and_quit)
+
+
+func _capture_banner_shot() -> void:
+	var img := get_viewport().get_texture().get_image()
+	img.save_png("B:/FFFA/tmp/m6_banner.png")
+	print("[ui] saved m6_banner.png")
 
 
 func _capture_placed_shot() -> void:
@@ -173,6 +183,7 @@ func _build_ui() -> void:
 	_build_sell_zone()
 	_build_action_buttons()
 	_build_status_line()
+	_build_banner()
 
 
 func _styled_panel(bg: Color, border: Color = Color(0, 0, 0, 0)) -> StyleBoxFlat:
@@ -357,6 +368,51 @@ func _make_action_button(label: String, callback: Callable) -> Button:
 	btn.custom_minimum_size = Vector2(140, 32)
 	btn.pressed.connect(callback)
 	return btn
+
+
+func _build_banner() -> void:
+	# Transparent passthrough container so the banner never eats clicks.
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.anchor_right = 1.0
+	holder.anchor_bottom = 1.0
+	add_child(holder)
+
+	banner_label = Label.new()
+	banner_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	banner_label.anchor_left = 0.0
+	banner_label.anchor_top = 0.22
+	banner_label.anchor_right = 1.0
+	banner_label.anchor_bottom = 0.22
+	banner_label.offset_left = 0
+	banner_label.offset_top = -80
+	banner_label.offset_right = 0
+	banner_label.offset_bottom = 80
+	banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	banner_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	banner_label.add_theme_font_size_override("font_size", 88)
+	banner_label.add_theme_color_override("font_color", Color.WHITE)
+	banner_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	banner_label.add_theme_constant_override("outline_size", 10)
+	banner_label.pivot_offset = Vector2(0, 40)
+	banner_label.modulate.a = 0.0
+	banner_label.text = ""
+	holder.add_child(banner_label)
+
+
+func _show_banner(text: String, color: Color) -> void:
+	if banner_label == null:
+		return
+	banner_label.text = text
+	banner_label.add_theme_color_override("font_color", color)
+	banner_label.modulate = Color(1, 1, 1, 1)
+	banner_label.scale = Vector2(0.7, 0.7)
+	var tw := create_tween()
+	tw.tween_property(banner_label, "scale", Vector2(1.15, 1.15), 0.28)\
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(banner_label, "scale", Vector2(1.0, 1.0), 0.18)
+	tw.tween_interval(1.0)
+	tw.tween_property(banner_label, "modulate:a", 0.0, 0.55)
 
 
 func _build_status_line() -> void:

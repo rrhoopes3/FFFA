@@ -170,7 +170,7 @@ Estimated cost: ~$10–20 for all 48 units.
 
 ## Known issues (deferred to M6 polish)
 
-- **`art/arena/arena.glb` doesn't import cleanly into Godot.** Materials are read with garbage colors and the embedded Sun light fights with the scene's own DirectionalLight3D, causing washed-out white floors and pure-black props. Currently bypassed with a procedural `PlaneMesh` floor in `main.tscn`. Whole arena visual pass is an M6 task.
+- **`art/arena/arena.glb` still doesn't import cleanly into Godot** (M3 issue). M6 sidestepped it entirely by building the arena from sub_resources in `main.tscn` — stone ring, corner pillars, torches, omni-lights. The `.glb` can be deleted at any time.
 - **No rigging.** Cats are static meshes — animation is procedural via transforms and shader flashes (idle bob, attack lunge, hurt material flash, death scale-fade). Good enough at game distance, but adding a shared cat armature would unlock more expressive anims (a possible M6 stretch).
 - **Headless `--import` floods stderr** with `progress_dialog`/`task_step` errors. They're benign — the import succeeds. No fix planned; just filter them.
 - **Procedural cats are still primitive blobs.** M4 gave them faction palettes, points, fold-ears, ear tufts, fluff, etc., which is enough to tell factions apart at game distance — but the per-unit silhouette differentiation inside a faction is mostly color, not geometry. A proper character-art pass (or AI mesh gen via Hyper3D once a paid key is in place) is M6 polish work.
@@ -184,9 +184,17 @@ Estimated cost: ~$10–20 for all 48 units.
 | **M3** | Pilot cat (Tabby Thug) full pipeline, 1v1 fight in 3D | ✅ done |
 | **M4** | Generate all 48 units with faction palettes | ✅ done |
 | **M5** | Shop / bench / merge / synergies UI | ✅ done |
-| **M6** | Polish — camera, VFX, sound, fix arena.glb, optional rigging | pending |
+| **M6** | Polish — camera orbit, VFX, banner, arena decor | ✅ done |
 
-When M6 lands, `godot/` (the v2 2D port) gets deleted and `godot4/` becomes the only project.
+The legacy `godot/` v2 project is kept in tree only as a reference during the cutover; it's no longer built or launched by anything. Delete it when you're ready to fully commit to v3 (`git rm -r godot/`).
+
+### M6 polish notes
+
+- **Camera rig** — no pivot Node3D; `arena_view.gd::_process` recomputes the camera transform each frame from `CAMERA_POS`, a `pivot_yaw` accumulator, and a `dolly` multiplier. On `combat_started` a Tween punches `dolly` from 1.0 → 0.82 (0.55s, cubic ease out); on `combat_ended` both `dolly` and `pivot_yaw` tween back to their neutral values. `pivot_yaw` accumulates at ~0.10 rad/s during the combat phase for a slow cinematic orbit.
+- **VFX** — `_spawn_hit_spark` and `_spawn_death_puff` create one-shot `GPUParticles3D` nodes on the fly with inline `ParticleProcessMaterial` setup. Crit hits get more particles + a redder tint. Cleanup is a 1–2s `create_timer().timeout → queue_free`.
+- **Banner** — `game_ui.gd::_show_banner` drives a scale-in + fade-out Tween on a centered Label. It's fed by the existing `EventBus.banner_requested` signal, so `CombatSim` already emits "FIGHT!" / "VICTORY!" / "DEFEAT!" without any additional wiring.
+- **Arena decor** — four corner pillars (CylinderMesh + BoxMesh cap), torch spheres with emission materials, and per-torch `OmniLight3D` nodes. The old broken `art/arena/arena.glb` is now fully bypassed and the scene is built entirely from sub_resources in `main.tscn`. Rebuilding the .glb is no longer a blocker.
+- **Sound** — no sound library is set up yet and one wasn't in scope. Every click/hit is currently silent.
 
 ## Bugs caught during the rewrite (notes for future-me)
 
