@@ -2,14 +2,9 @@
 
 A multiplayer auto-battler with **cats**. Eight factions, 48 units, hex board, shop phase → combat → results. Riot's TFT, but you're a cat.
 
-## Repo state — v3.0.0-dev rewrite in progress
+## Repo state — v3.0.0-dev (M1–M6 complete)
 
-The repo currently has **two parallel Godot projects**:
-
-- **`godot/`** — the v2 2D Godot 4 port. Working but visually dated (sprite sheets, canvas_item shaders). Will be deleted at the end of M6.
-- **`godot4/`** — the v3 **3D rewrite** in progress. New main project going forward. Built around a clean sim/view split so the visual layer can be iterated on without touching gameplay logic.
-
-Until the rewrite is feature-complete, both projects coexist. **All new work happens in `godot4/`.**
+Single Godot project at `godot4/`: 3D hex arena, 48 procedural chibi cats, full shop → combat → results loop, camera orbit + particle VFX + banner polish. The legacy v2 `godot/` 2D port was removed at the end of M6 — it lives on only in git history (`git log --follow godot/`).
 
 ## Quick start
 
@@ -186,7 +181,7 @@ Estimated cost: ~$10–20 for all 48 units.
 | **M5** | Shop / bench / merge / synergies UI | ✅ done |
 | **M6** | Polish — camera orbit, VFX, banner, arena decor | ✅ done |
 
-The legacy `godot/` v2 project is kept in tree only as a reference during the cutover; it's no longer built or launched by anything. Delete it when you're ready to fully commit to v3 (`git rm -r godot/`).
+(The legacy `godot/` v2 port was deleted at the end of M6; this tree is now v3-only.)
 
 ### M6 polish notes
 

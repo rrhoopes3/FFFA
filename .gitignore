@@ -11,5 +11,4 @@ tmp/
 
 # Godot import cache
 godot4/.godot/
-godot/.godot/
 *.blend1
