@@ -188,6 +188,109 @@ def make_column(name, x, y, height, tilt_deg, island, mat, color=(0.55, 0.52, 0.
 	return obj
 
 
+def make_tree(name, x, y, scale, island, mat,
+              trunk_col=(0.30, 0.20, 0.10),
+              foliage_col=(0.16, 0.30, 0.13)):
+	"""Stylized cone-stack tree — trunk + 3 stacked foliage cones."""
+	bm = bmesh.new()
+	trunk_verts = set()
+
+	res = bmesh.ops.create_cone(
+		bm, cap_ends=True, cap_tris=False, segments=8,
+		radius1=0.18 * scale, radius2=0.16 * scale, depth=1.4 * scale,
+	)
+	for v in res['verts']:
+		v.co.z += 0.7 * scale
+		trunk_verts.add(v)
+
+	# Three stacked foliage cones, decreasing radius
+	for cone_z, cone_r, cone_h in [(1.30, 1.05, 1.20),
+	                                (2.00, 0.80, 1.05),
+	                                (2.65, 0.55, 0.95)]:
+		res = bmesh.ops.create_cone(
+			bm, cap_ends=True, cap_tris=False, segments=10,
+			radius1=cone_r * scale, radius2=0.04 * scale, depth=cone_h * scale,
+		)
+		for v in res['verts']:
+			v.co.z += cone_z * scale
+
+	bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
+	color_layer = bm.loops.layers.color.new("Col")
+	for f in bm.faces:
+		for loop in f.loops:
+			if loop.vert in trunk_verts:
+				n = noise.noise(Vector(loop.vert.co)) * 0.04
+				col = (trunk_col[0] + n, trunk_col[1] + n, trunk_col[2] + n, 1.0)
+			else:
+				n = noise.noise(Vector(loop.vert.co * 1.5)) * 0.06
+				col = (foliage_col[0] + n, foliage_col[1] + n * 1.4, foliage_col[2] + n * 0.6, 1.0)
+			loop[color_layer] = col
+
+	mesh = bpy.data.meshes.new(f"{name}_mesh")
+	bm.to_mesh(mesh)
+	bm.free()
+
+	obj = bpy.data.objects.new(name, mesh)
+	bpy.context.collection.objects.link(obj)
+	obj.location = Vector((x, y, island_z_at(island, x, y) - 0.05))
+	obj.rotation_euler = (random.uniform(-0.04, 0.04),
+	                      random.uniform(-0.04, 0.04),
+	                      random.uniform(0, math.tau))
+
+	# Flat shading reads better for stylized cones
+	for poly in mesh.polygons:
+		poly.use_smooth = False
+	obj.data.materials.append(mat)
+	return obj
+
+
+def make_monolith(name, x, y, height, island, mat, color=(0.42, 0.40, 0.38)):
+	"""Tall flat stone slab — like a banner stone or megalith."""
+	bm = bmesh.new()
+	bmesh.ops.create_cube(bm, size=1.0)
+
+	for v in bm.verts:
+		v.co.x *= 0.55
+		v.co.y *= 0.18
+		v.co.z *= height
+		# Subtle organic noise displacement
+		n = noise.noise(Vector((v.co.x * 1.5, v.co.y * 1.5, v.co.z * 0.8)))
+		v.co.x += n * 0.04
+		v.co.y += n * 0.02
+		v.co.z += height * 0.5
+
+	bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
+	color_layer = bm.loops.layers.color.new("Col")
+	for f in bm.faces:
+		for loop in f.loops:
+			# Vertical bands of slight color variation — looks like weathering
+			band = math.sin(loop.vert.co.z * 4.0) * 0.04
+			n = noise.noise(Vector(loop.vert.co * 2.0)) * 0.05
+			col = (color[0] + band + n,
+			       color[1] + band + n,
+			       color[2] + band + n,
+			       1.0)
+			loop[color_layer] = col
+
+	mesh = bpy.data.meshes.new(f"{name}_mesh")
+	bm.to_mesh(mesh)
+	bm.free()
+
+	obj = bpy.data.objects.new(name, mesh)
+	bpy.context.collection.objects.link(obj)
+	obj.location = Vector((x, y, island_z_at(island, x, y) - 0.05))
+	obj.rotation_euler = (random.uniform(-0.06, 0.06),
+	                      random.uniform(-0.06, 0.06),
+	                      random.uniform(0, math.tau))
+
+	for poly in mesh.polygons:
+		poly.use_smooth = False
+	obj.data.materials.append(mat)
+	return obj
+
+
 def make_boulder(name, x, y, scale, island, mat, color=(0.40, 0.38, 0.36)):
 	bm = bmesh.new()
 	bmesh.ops.create_icosphere(bm, subdivisions=2, radius=scale)
@@ -259,6 +362,34 @@ SMALL_ROCK_POSITIONS = [
 	( 3.0,  7.5, 0.17),
 ]
 
+# Trees scattered around the plateau perimeter, well clear of the existing
+# main.tscn corner pillars at (±5, ±3).
+TREE_POSITIONS = [
+	(  5.5,  7.2, 1.15),
+	( -5.5,  7.2, 1.05),
+	(  5.5, -7.2, 1.10),
+	( -5.5, -7.2, 1.20),
+	(  7.5,  3.5, 0.95),
+	( -7.5,  3.5, 1.00),
+	(  7.5, -3.5, 1.10),
+	( -7.5, -3.5, 0.90),
+	(  2.5,  8.4, 0.85),
+	( -2.5,  8.4, 0.80),
+]
+
+# Stone slab monoliths between the corner pillars and the plateau edge,
+# adding banner-stone vibes to the perimeter.
+MONOLITH_POSITIONS = [
+	(  2.8,  9.0, 2.6),
+	( -2.8,  9.0, 2.4),
+	(  2.8, -9.0, 2.5),
+	( -2.8, -9.0, 2.7),
+	(  9.0,  2.4, 2.2),
+	( -9.0,  2.4, 2.5),
+	(  9.0, -2.4, 2.6),
+	( -9.0, -2.4, 2.3),
+]
+
 
 def build_all():
 	random.seed(42)
@@ -276,6 +407,10 @@ def build_all():
 		make_boulder(f"Boulder_{i:02d}", x, y, s, island, mat)
 	for i, (x, y, s) in enumerate(SMALL_ROCK_POSITIONS):
 		make_boulder(f"SmallRock_{i:02d}", x, y, s, island, mat)
+	for i, (x, y, s) in enumerate(TREE_POSITIONS):
+		make_tree(f"Tree_{i:02d}", x, y, s, island, mat)
+	for i, (x, y, h) in enumerate(MONOLITH_POSITIONS):
+		make_monolith(f"Monolith_{i:02d}", x, y, h, island, mat)
 
 	# Active object required by gltf exporter (the M3 export crash gotcha)
 	bpy.ops.object.select_all(action='DESELECT')
