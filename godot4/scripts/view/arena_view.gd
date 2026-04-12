@@ -45,6 +45,14 @@ signal arena_hex_clicked(hex_key: String)
 func _ready() -> void:
 	_apply_camera_transform()
 
+	# Imported island.glb has vertex colors but Godot's GLB material doesn't
+	# enable vertex_color_use_as_albedo by default. Walk the subtree once and
+	# duplicate-then-patch each surface material so the grass/sand/rock bands
+	# painted in Blender actually show up.
+	var island := get_node_or_null("Island")
+	if island:
+		_enable_vertex_colors(island)
+
 	hex_grid.hex_clicked.connect(_on_hex_clicked)
 
 	# Shop signals
@@ -71,6 +79,21 @@ func _process(delta: float) -> void:
 	if phase == "combat":
 		pivot_yaw += delta * COMBAT_ORBIT_SPEED
 	_apply_camera_transform()
+
+
+func _enable_vertex_colors(node: Node) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.mesh:
+			for i in mi.mesh.get_surface_count():
+				var src := mi.mesh.surface_get_material(i)
+				if src is BaseMaterial3D:
+					var m := (src as BaseMaterial3D).duplicate() as BaseMaterial3D
+					m.vertex_color_use_as_albedo = true
+					m.albedo_color = Color.WHITE
+					mi.set_surface_override_material(i, m)
+	for child in node.get_children():
+		_enable_vertex_colors(child)
 
 
 func _apply_camera_transform() -> void:
