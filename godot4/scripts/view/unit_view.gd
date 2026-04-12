@@ -40,16 +40,27 @@ var hurt_timer: float = 0.0
 var attack_timer: float = 0.0
 var cast_timer: float = 0.0
 var lunge_dir: Vector3 = Vector3.ZERO   # Set on attack, multiplied by sin curve each frame
+var hurt_dir: Vector3 = Vector3.ZERO    # Set on damage, knockback away from attacker
+var pending_hurt_dir: Vector3 = Vector3.ZERO  # Set by arena_view from the attacker's position before damage signal arrives
 var mesh_root_base_y: float = 0.0       # Base Y from origin-correction; bob/lunge are added on top
+var base_yaw: float = 0.0               # Team-facing yaw (PI for enemies, 0 for player)
+var target_yaw: float = 0.0             # Lerp target — used for face-the-attacker rotation
+var prev_position: Vector3 = Vector3.ZERO  # For move-lean and walk bounce
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 const PLAYER_COLOR := Color(0.30, 0.55, 0.95)
 const ENEMY_COLOR  := Color(0.95, 0.35, 0.35)
-const HURT_FLASH_DURATION := 0.18
-const ATTACK_DURATION := 0.30
+const HURT_FLASH_DURATION := 0.22
+const ATTACK_DURATION := 0.42       # 0.12 windup + 0.18 strike + 0.12 recover
+const ATTACK_WINDUP := 0.12
+const ATTACK_STRIKE := 0.18
 const CAST_DURATION := 0.45
 const BOB_AMPLITUDE := 0.04
 const BOB_SPEED := 2.5
+const SWAY_AMPLITUDE := 0.025
+const SWAY_SPEED := 1.7
+const KNOCKBACK_DISTANCE := 0.18
+const YAW_LERP_SPEED := 8.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -72,9 +83,10 @@ func setup(p_uid: int, p_unit_id: String, p_hex: String, p_is_player: bool,
 	_build_team_disc()
 	_build_hp_bar()
 	_snap_to_hex()
-	if not is_player:
-		# Face the player side (positive Z is player). Enemies look at -Z.
-		rotation.y = PI
+	# Face the opposing team. Enemies look at -Z; players look at +Z.
+	base_yaw = PI if not is_player else 0.0
+	target_yaw = base_yaw
+	rotation.y = base_yaw
 
 
 func _load_mesh() -> void:
@@ -186,7 +198,15 @@ func play_attack(toward_hex: String) -> void:
 	attack_timer = ATTACK_DURATION
 	var pos := Hex.parse(toward_hex)
 	var tgt := HexGrid.hex_to_world(pos.x, pos.y)
-	lunge_dir = (tgt - target_world_pos).normalized() * 0.25
+	var to_tgt := tgt - target_world_pos
+	to_tgt.y = 0.0
+	if to_tgt.length() > 0.001:
+		lunge_dir = to_tgt.normalized() * 0.32
+		# Face the target — yaw points along -Z in the local frame, so we
+		# want to look at the target. atan2(x, z) gives the yaw needed.
+		target_yaw = atan2(to_tgt.x, to_tgt.z)
+	else:
+		lunge_dir = Vector3.ZERO
 
 
 func play_cast() -> void:
@@ -196,13 +216,42 @@ func play_cast() -> void:
 func take_damage(new_hp: int) -> void:
 	current_hp = clampi(new_hp, 0, max_hp)
 	hurt_timer = HURT_FLASH_DURATION
+	# Use the direction arena_view pre-loaded from the attacker, or fall back
+	# to the team-facing direction if it wasn't set (e.g. ability damage).
+	if pending_hurt_dir.length() > 0.01:
+		hurt_dir = pending_hurt_dir
+		pending_hurt_dir = Vector3.ZERO
+	else:
+		hurt_dir = Vector3(0, 0, 1.0 if not is_player else -1.0)
 	_update_hp_bar()
 
 
 func die() -> void:
 	alive = false
+	# Random tumble axis biased toward horizontal so the cat falls over rather
+	# than spinning in place. Also kicks slightly upward + backward.
+	var tumble_axis := Vector3(
+		randf_range(-1.0, 1.0),
+		randf_range(-0.2, 0.2),
+		randf_range(-1.0, 1.0)
+	).normalized()
+	var tumble_angle := randf_range(1.4, 2.4) * (1.0 if randf() > 0.5 else -1.0)
+	var death_offset := Vector3(
+		randf_range(-0.15, 0.15),
+		0.4,
+		randf_range(-0.15, 0.15)
+	)
+
 	var tween := create_tween().set_parallel(true)
-	tween.tween_property(self, "scale", Vector3(0.1, 0.1, 0.1), 0.6)
+	tween.tween_property(self, "scale", Vector3(0.05, 0.05, 0.05), 0.65)
+	tween.tween_property(self, "position", position + death_offset, 0.55)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	# Tumble via rotation around the chosen axis. Callable.bind() APPENDS
+	# the bound args, so the tween calls _apply_tumble(value, axis).
+	tween.tween_method(
+		Callable(self, "_apply_tumble").bind(tumble_axis), 0.0, tumble_angle, 0.65
+	).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
 	# Fade alpha via duplicated materials (Node3D has no modulate)
 	for inst in mesh_instances:
 		var current_mat: Material = inst.get_surface_override_material(0)
@@ -220,6 +269,14 @@ func die() -> void:
 	tween.chain().tween_callback(queue_free)
 
 
+func _apply_tumble(angle: float, axis: Vector3) -> void:
+	# Apply tumble as an extra rotation on top of the base yaw. We rebuild
+	# the transform basis from scratch each tick — never accumulate.
+	var basis := Basis(Vector3.UP, base_yaw)
+	basis = basis.rotated(axis, angle)
+	transform.basis = basis
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  ANIMATION TICK
 # ═══════════════════════════════════════════════════════════════════════════
@@ -229,6 +286,7 @@ func _process(delta: float) -> void:
 		return
 
 	# Smooth move toward target
+	prev_position = position
 	var to_target := target_world_pos - position
 	if to_target.length() > 0.01:
 		var step := move_speed * delta
@@ -237,24 +295,66 @@ func _process(delta: float) -> void:
 		else:
 			position += to_target.normalized() * step
 
-	# Compute mesh_root position from scratch each frame: base + bob + lunge.
-	# Never accumulate — that was a bug that drifted units off-screen.
-	var bob_y := sin((Time.get_ticks_msec() / 1000.0) * BOB_SPEED + bob_phase) * BOB_AMPLITUDE
+	# Yaw lerp — face the attack target during a strike, snap back to base
+	# yaw afterward. transform.basis isn't touched here; rotation.y is the
+	# canonical source so the death tumble can override it cleanly.
+	var desired_yaw := target_yaw if attack_timer > 0.0 else base_yaw
+	var yaw_delta := wrapf(desired_yaw - rotation.y, -PI, PI)
+	rotation.y += yaw_delta * minf(1.0, delta * YAW_LERP_SPEED)
+
+	# Compute mesh_root position + scale from scratch each frame: base + bob
+	# + sway + lunge + knockback. Never accumulate — that bug ate 30 minutes
+	# in M3 (see CLAUDE.md gotchas).
+	var t_now := Time.get_ticks_msec() / 1000.0
+	var bob_y := sin(t_now * BOB_SPEED + bob_phase) * BOB_AMPLITUDE
+	var sway_x := sin(t_now * SWAY_SPEED + bob_phase * 0.7) * SWAY_AMPLITUDE
+	var sway_z := cos(t_now * SWAY_SPEED * 0.83 + bob_phase) * SWAY_AMPLITUDE * 0.6
+
+	# Walk bounce — slightly amplified bob when moving
+	var move_dist := (position - prev_position).length()
+	if move_dist > 0.001:
+		var walk_freq := t_now * 7.0 + bob_phase
+		bob_y += abs(sin(walk_freq)) * 0.05
+
 	var lunge_xz := Vector3.ZERO
+	var stretch := Vector3.ONE
 	if attack_timer > 0.0:
 		attack_timer = maxf(attack_timer - delta, 0.0)
-		var t := 1.0 - (attack_timer / ATTACK_DURATION)
-		var f := sin(t * PI)
-		lunge_xz = lunge_dir * f
-		var s := 1.0 + 0.15 * f
-		if mesh_root:
-			mesh_root.scale = Vector3(s, s, s)
-	else:
-		if mesh_root:
-			mesh_root.scale = mesh_root.scale.lerp(Vector3.ONE, delta * 8.0)
+		var elapsed := ATTACK_DURATION - attack_timer
+		# Three-phase attack: windup → strike → recover
+		if elapsed < ATTACK_WINDUP:
+			# Windup: pull back, squash down vertically
+			var pull := elapsed / ATTACK_WINDUP
+			lunge_xz = -lunge_dir * 0.45 * pull
+			stretch = Vector3(1.0 + 0.10 * pull, 1.0 - 0.12 * pull, 1.0 + 0.10 * pull)
+		elif elapsed < ATTACK_WINDUP + ATTACK_STRIKE:
+			# Strike: lunge forward, stretch into the lunge direction
+			var strike_t := (elapsed - ATTACK_WINDUP) / ATTACK_STRIKE
+			var f := sin(strike_t * PI)
+			lunge_xz = lunge_dir * f
+			# Stretch along the lunge axis (approximated as Z since we face target)
+			stretch = Vector3(1.0 - 0.06 * f, 1.0 - 0.06 * f, 1.0 + 0.20 * f)
+		else:
+			# Recovery: ease back to neutral
+			var recover_t := (elapsed - ATTACK_WINDUP - ATTACK_STRIKE) / (ATTACK_DURATION - ATTACK_WINDUP - ATTACK_STRIKE)
+			var k := 1.0 - recover_t
+			lunge_xz = lunge_dir * 0.20 * k
+			stretch = Vector3(1.0 - 0.03 * k, 1.0 - 0.03 * k, 1.0 + 0.10 * k)
+
+	# Knockback offset on hurt — overrides the stretch with a hit shake
+	var knock_xz := Vector3.ZERO
+	if hurt_timer > 0.0:
+		var hurt_pct := hurt_timer / HURT_FLASH_DURATION
+		var shake := sin(hurt_pct * PI * 4.0) * 0.04
+		knock_xz = hurt_dir * KNOCKBACK_DISTANCE * hurt_pct + Vector3(shake, 0, shake)
 
 	if mesh_root:
-		mesh_root.position = Vector3(lunge_xz.x, mesh_root_base_y + bob_y, lunge_xz.z)
+		mesh_root.position = Vector3(
+			lunge_xz.x + knock_xz.x + sway_x,
+			mesh_root_base_y + bob_y,
+			lunge_xz.z + knock_xz.z + sway_z,
+		)
+		mesh_root.scale = mesh_root.scale.lerp(stretch, delta * 14.0)
 
 	# Cast flash: emission boost on team disc + mesh
 	if cast_timer > 0.0:

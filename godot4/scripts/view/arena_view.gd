@@ -269,6 +269,12 @@ func _on_unit_attacked(attacker_uid: int, target_uid: int, _damage: int, is_crit
 	var target = combat_views.get(target_uid, null)
 	if attacker and target:
 		attacker.play_attack(target.hex_key)
+		# Pre-load the target with the knockback direction so the next
+		# unit_damaged signal lands a hit-shake going away from the attacker.
+		var away: Vector3 = target.position - attacker.position
+		away.y = 0.0
+		if away.length() > 0.001:
+			target.pending_hurt_dir = away.normalized()
 		_spawn_hit_spark(target.global_position + Vector3(0, 0.6, 0), is_crit)
 
 
