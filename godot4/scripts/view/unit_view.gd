@@ -356,13 +356,28 @@ func _process(delta: float) -> void:
 		)
 		mesh_root.scale = mesh_root.scale.lerp(stretch, delta * 14.0)
 
-	# Cast flash: emission boost on team disc + mesh
+	# Cast — spin + float + stretch + glow halo
 	if cast_timer > 0.0:
 		cast_timer = maxf(cast_timer - delta, 0.0)
 		var t := 1.0 - (cast_timer / CAST_DURATION)
-		var glow := sin(t * PI) * 4.0
+		var arc := sin(t * PI)         # 0 → 1 → 0 over the cast
+		var glow := arc * 5.0
 		if team_disc and team_disc.material_override:
 			team_disc.material_override.emission_energy_multiplier = 2.0 + glow
+		if mesh_root:
+			# Spin around Y at increasing speed, float up, stretch up, then settle
+			var spin := (1.0 - cast_timer / CAST_DURATION) * TAU * 1.2
+			mesh_root.rotation.y = spin
+			mesh_root.position.y = mesh_root_base_y + bob_y + arc * 0.32
+			var stretch_cast := Vector3(
+				1.0 - 0.10 * arc,
+				1.0 + 0.22 * arc,
+				1.0 - 0.10 * arc,
+			)
+			mesh_root.scale = mesh_root.scale.lerp(stretch_cast, delta * 12.0)
+	elif mesh_root and mesh_root.rotation.y != 0.0:
+		# Decay rotation back to 0 once the cast finishes
+		mesh_root.rotation.y = lerpf(mesh_root.rotation.y, 0.0, delta * 6.0)
 
 	# Hurt flash: white tint via duplicated material
 	if hurt_timer > 0.0:

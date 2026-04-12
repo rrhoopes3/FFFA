@@ -36,6 +36,9 @@ var phase: String = "shop"
 var pivot_yaw: float = 0.0
 var dolly: float = 1.0                 # tweened between 1.0 (shop) and 0.82 (combat)
 var _dolly_tween: Tween
+var shake_strength: float = 0.0        # Trauma — squared into shake offset
+const SHAKE_DECAY := 6.0
+const SHAKE_MAX_OFFSET := 0.55
 
 # Signal published for the 2D UI when a hex is clicked while a drag is active
 # (the drag layer asks the camera to project the cursor → hex).
@@ -78,6 +81,8 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if phase == "combat":
 		pivot_yaw += delta * COMBAT_ORBIT_SPEED
+	if shake_strength > 0.0:
+		shake_strength = maxf(0.0, shake_strength - SHAKE_DECAY * delta)
 	_apply_camera_transform()
 
 
@@ -99,8 +104,29 @@ func _enable_vertex_colors(node: Node) -> void:
 func _apply_camera_transform() -> void:
 	var offset: Vector3 = (CAMERA_POS - CAMERA_LOOK_AT) * dolly
 	var rotated: Vector3 = offset.rotated(Vector3.UP, pivot_yaw)
-	camera.position = CAMERA_LOOK_AT + rotated
-	camera.look_at(CAMERA_LOOK_AT, Vector3.UP)
+	# Trauma-based camera shake — square the trauma so big shakes stand out
+	# and small ones decay quickly. Vector offsets perturb both position and
+	# look-at so the camera both translates AND tilts.
+	var shake := Vector3.ZERO
+	var look_jitter := Vector3.ZERO
+	if shake_strength > 0.0:
+		var s := shake_strength * shake_strength * SHAKE_MAX_OFFSET
+		shake = Vector3(
+			randf_range(-1.0, 1.0),
+			randf_range(-1.0, 1.0) * 0.6,
+			randf_range(-1.0, 1.0),
+		) * s
+		look_jitter = Vector3(
+			randf_range(-1.0, 1.0),
+			randf_range(-1.0, 1.0),
+			randf_range(-1.0, 1.0),
+		) * s * 0.4
+	camera.position = CAMERA_LOOK_AT + rotated + shake
+	camera.look_at(CAMERA_LOOK_AT + look_jitter, Vector3.UP)
+
+
+func add_camera_trauma(amount: float) -> void:
+	shake_strength = minf(1.0, shake_strength + amount)
 
 
 func _start_combat_camera() -> void:
@@ -276,6 +302,25 @@ func _on_unit_attacked(attacker_uid: int, target_uid: int, _damage: int, is_crit
 		if away.length() > 0.001:
 			target.pending_hurt_dir = away.normalized()
 		_spawn_hit_spark(target.global_position + Vector3(0, 0.6, 0), is_crit)
+		# Crit hits trigger camera trauma + a brief hit-pause for impact feel.
+		# Non-crits get a tiny tap of trauma.
+		if is_crit:
+			add_camera_trauma(0.85)
+			_hit_pause(0.10, 0.30)
+		else:
+			add_camera_trauma(0.18)
+
+
+func _hit_pause(real_seconds: float, slow_factor: float) -> void:
+	# Brief Engine.time_scale dip — feels like the game freezes on impact.
+	# The restore timer ignores time_scale so it actually fires on time.
+	Engine.time_scale = slow_factor
+	var t := get_tree().create_timer(real_seconds, true, false, true)
+	t.timeout.connect(_restore_time_scale)
+
+
+func _restore_time_scale() -> void:
+	Engine.time_scale = 1.0
 
 
 func _on_unit_damaged(uid: int, hp: int, _max_hp: int) -> void:
@@ -363,6 +408,36 @@ func _on_unit_ability_cast(uid: int, _ability_name: String) -> void:
 	var view = combat_views.get(uid, null)
 	if view:
 		view.play_cast()
+		_spawn_cast_halo(view.global_position + Vector3(0, 0.05, 0), view.is_player)
+		add_camera_trauma(0.25)
+
+
+func _spawn_cast_halo(world_pos: Vector3, is_player: bool) -> void:
+	# Expanding torus ring under the casting unit. Tweens scale up + alpha
+	# down, then queue_frees. Cheap and reads at game distance.
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.45
+	torus.outer_radius = 0.55
+	torus.rings = 32
+	torus.ring_segments = 8
+	ring.mesh = torus
+	var mat := StandardMaterial3D.new()
+	var col := Color(0.40, 0.70, 1.0) if is_player else Color(1.0, 0.45, 0.40)
+	mat.albedo_color = col
+	mat.emission_enabled = true
+	mat.emission = col
+	mat.emission_energy_multiplier = 4.5
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ring.material_override = mat
+	ring.position = world_pos
+	add_child(ring)
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(ring, "scale", Vector3(3.5, 1.0, 3.5), 0.55)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(mat, "albedo_color:a", 0.0, 0.55)
+	tween.chain().tween_callback(ring.queue_free)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
