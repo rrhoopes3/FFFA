@@ -7,6 +7,7 @@ const Hex = preload("res://scripts/sim/hex.gd")
 
 const TICK_SEC := 0.05            # 50 ms per tick
 const MAX_TICKS := 600            # 30 second timeout
+const TAUNT_RANGE := 1            # tanks taunt enemies within this hex distance
 
 var combat_timer: Timer
 var units: Array = []
@@ -45,6 +46,7 @@ func start_combat() -> void:
 	EventBus.banner_requested.emit("FIGHT!", Color(1, 0.3, 0.3))
 
 	_spawn_units(GameState.player_board, GameState.enemy_board)
+	_pounce_melee_units(true)
 
 	combat_timer.start()
 
@@ -58,6 +60,7 @@ func run_headless(player_board: Dictionary, enemy_board: Dictionary,
 	GameState.player_board = player_board.duplicate(true)
 	GameState.enemy_board = enemy_board.duplicate(true)
 	_spawn_units(player_board, enemy_board, emit_signals)
+	_pounce_melee_units(emit_signals)
 
 	tick_count = 0
 	var log: Array = []
@@ -158,7 +161,7 @@ func _step(emit_signals: bool) -> String:
 		if _has_status(unit, "stun"):
 			continue
 
-		var target = _find_nearest_enemy(unit)
+		var target = _find_target(unit)
 		if target == null:
 			continue
 
@@ -166,6 +169,18 @@ func _step(emit_signals: bool) -> String:
 		if dist <= unit.range:
 			if current_time - unit.last_action_time >= unit.action_cooldown:
 				_process_attack(unit, target, current_time, emit_signals)
+			# Ranged kite: step back when something is closer than preferred distance.
+			# Independent of action_cooldown so the unit can shoot AND retreat.
+			if unit.role == GameData.RANGED and unit.range >= 2:
+				if _min_enemy_dist(unit, unit.hex_key) < unit.range:
+					if current_time - unit.last_move_time >= unit.move_cooldown:
+						var kite_hex := _find_kite_hex(unit)
+						if kite_hex != "":
+							var old_hex: String = unit.hex_key
+							unit.hex_key = kite_hex
+							unit.last_move_time = current_time
+							if emit_signals:
+								EventBus.unit_moved.emit(unit.uid, old_hex, kite_hex)
 		else:
 			if current_time - unit.last_move_time >= unit.move_cooldown:
 				var new_hex := _find_move_toward(unit, target)
@@ -292,7 +307,7 @@ func _cast_ability(unit: Dictionary, _current_time: float, emit_signals: bool) -
 
 	# Single-target damage mult
 	if effect.has("damage_mult") and not effect.has("aoe_damage_mult"):
-		var target = _find_nearest_enemy(unit)
+		var target = _find_target(unit)
 		if target:
 			var dmg := maxi(int(unit.attack * effect.damage_mult) - int(target.armor), 1)
 			target.hp -= dmg
@@ -320,7 +335,7 @@ func _cast_ability(unit: Dictionary, _current_time: float, emit_signals: bool) -
 
 	# Single-target stun
 	if effect.has("stun"):
-		var target = _find_nearest_enemy(unit)
+		var target = _find_target(unit)
 		if target:
 			_add_status(target, "stun", 0.0, float(effect.stun), emit_signals)
 
@@ -416,6 +431,105 @@ func _find_nearest_enemy(unit: Dictionary):
 			best_dist = d
 			best = other
 	return best
+
+
+## Taunt-aware target picker. An enemy tank within TAUNT_RANGE overrides the
+## normal nearest pick — distant attackers ignore the taunt.
+func _find_target(unit: Dictionary):
+	var taunter = null
+	var taunter_dist := 999
+	for other in units:
+		if other.hp <= 0 or other.is_player == unit.is_player:
+			continue
+		if other.role != GameData.TANK:
+			continue
+		var d := Hex.distance(unit.hex_key, other.hex_key)
+		if d <= TAUNT_RANGE and d < taunter_dist:
+			taunter = other
+			taunter_dist = d
+	if taunter != null:
+		return taunter
+	return _find_nearest_enemy(unit)
+
+
+## Smallest hex distance from `from_hex` to any living enemy of `unit`.
+func _min_enemy_dist(unit: Dictionary, from_hex: String) -> int:
+	var best := 999
+	for other in units:
+		if other.hp <= 0 or other.is_player == unit.is_player:
+			continue
+		var d := Hex.distance(from_hex, other.hex_key)
+		if d < best:
+			best = d
+	return best
+
+
+## Pick a neighbor hex that increases the minimum distance to any enemy
+## while still keeping at least one enemy in attack range. Returns "" if
+## no improvement is possible.
+func _find_kite_hex(unit: Dictionary) -> String:
+	var occupied: Dictionary = {}
+	for u in units:
+		if u.hp > 0 and u.uid != unit.uid:
+			occupied[u.hex_key] = true
+
+	var current_min := _min_enemy_dist(unit, unit.hex_key)
+	var best_hex := ""
+	var best_min := current_min
+
+	for hex in Hex.neighbors(unit.hex_key):
+		if occupied.has(hex):
+			continue
+		var min_d := _min_enemy_dist(unit, hex)
+		if min_d <= best_min:
+			continue
+		var has_target := false
+		for other in units:
+			if other.hp <= 0 or other.is_player == unit.is_player:
+				continue
+			if Hex.distance(hex, other.hex_key) <= unit.range:
+				has_target = true
+				break
+		if not has_target:
+			continue
+		best_min = min_d
+		best_hex = hex
+	return best_hex
+
+
+## Run once at combat start: each melee unit leaps to a free hex adjacent
+## to its nearest enemy. Processed in spawn order so claims are stable.
+func _pounce_melee_units(emit_signals: bool) -> void:
+	var occupied: Dictionary = {}
+	for u in units:
+		occupied[u.hex_key] = u.uid
+
+	for unit in units:
+		if unit.role != GameData.MELEE:
+			continue
+		var target = _find_nearest_enemy(unit)
+		if target == null:
+			continue
+		if Hex.distance(unit.hex_key, target.hex_key) <= 1:
+			continue
+
+		var best_hex := ""
+		var best_back_dist := 999
+		for hex in Hex.neighbors(target.hex_key):
+			if occupied.has(hex):
+				continue
+			var d := Hex.distance(unit.hex_key, hex)
+			if d < best_back_dist:
+				best_back_dist = d
+				best_hex = hex
+
+		if best_hex != "":
+			var old_hex: String = unit.hex_key
+			occupied.erase(old_hex)
+			occupied[best_hex] = unit.uid
+			unit.hex_key = best_hex
+			if emit_signals:
+				EventBus.unit_moved.emit(unit.uid, old_hex, best_hex)
 
 
 func _units_in_range(hex_key: String, radius: int, target_enemies: bool) -> Array:
