@@ -188,6 +188,52 @@ def make_column(name, x, y, height, tilt_deg, island, mat, color=(0.55, 0.52, 0.
 	return obj
 
 
+def make_bush(name, x, y, scale, island, mat,
+              foliage_col=(0.18, 0.34, 0.14)):
+	"""Small clumpy bush — 2-3 overlapping displaced spheres."""
+	bm = bmesh.new()
+
+	clumps = random.randint(2, 4)
+	for _ in range(clumps):
+		ox = random.uniform(-0.25, 0.25) * scale
+		oy = random.uniform(-0.25, 0.25) * scale
+		oz = random.uniform(0.0, 0.20) * scale
+		r = scale * random.uniform(0.45, 0.65)
+
+		res = bmesh.ops.create_icosphere(bm, subdivisions=2, radius=r)
+		for v in res['verts']:
+			n = noise.noise(Vector(v.co * 1.5))
+			v.co += v.co.normalized() * n * 0.15 * r
+			v.co.x += ox
+			v.co.y += oy
+			v.co.z += oz + r * 0.55
+
+	bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+
+	color_layer = bm.loops.layers.color.new("Col")
+	for f in bm.faces:
+		for loop in f.loops:
+			n = noise.noise(Vector(loop.vert.co * 2.0)) * 0.08
+			col = (foliage_col[0] + n * 0.5,
+			       foliage_col[1] + n,
+			       foliage_col[2] + n * 0.4, 1.0)
+			loop[color_layer] = col
+
+	mesh = bpy.data.meshes.new(f"{name}_mesh")
+	bm.to_mesh(mesh)
+	bm.free()
+
+	obj = bpy.data.objects.new(name, mesh)
+	bpy.context.collection.objects.link(obj)
+	obj.location = Vector((x, y, island_z_at(island, x, y) - 0.05))
+	obj.rotation_euler = (0, 0, random.uniform(0, math.tau))
+
+	for poly in mesh.polygons:
+		poly.use_smooth = True
+	obj.data.materials.append(mat)
+	return obj
+
+
 def make_tree(name, x, y, scale, island, mat,
               trunk_col=(0.30, 0.20, 0.10),
               foliage_col=(0.16, 0.30, 0.13)):
@@ -390,6 +436,37 @@ MONOLITH_POSITIONS = [
 	( -9.0, -2.4, 2.3),
 ]
 
+# Bushes scattered across the visible grass band (between the arena ring at
+# r=6 and the plateau edge at r=9.5). Avoids the corner pillars at (±5, ±3).
+BUSH_POSITIONS = [
+	(  6.6,  1.5, 0.55),
+	( -6.6,  1.5, 0.50),
+	(  6.6, -1.5, 0.60),
+	( -6.6, -1.5, 0.55),
+	(  1.8,  6.8, 0.50),
+	( -1.8,  6.8, 0.65),
+	(  1.8, -6.8, 0.55),
+	( -1.8, -6.8, 0.55),
+	(  4.0,  7.5, 0.40),
+	( -4.0,  7.5, 0.45),
+	(  4.0, -7.5, 0.45),
+	( -4.0, -7.5, 0.40),
+	(  7.5,  5.5, 0.35),
+	( -7.5,  5.5, 0.35),
+	(  7.5, -5.5, 0.40),
+	( -7.5, -5.5, 0.35),
+]
+
+# Tree color variants — some olive, some sage, some deep forest, for variety.
+TREE_FOLIAGE_VARIANTS = [
+	(0.16, 0.30, 0.13),  # deep forest
+	(0.22, 0.36, 0.14),  # mid green
+	(0.18, 0.32, 0.12),  # forest
+	(0.24, 0.34, 0.16),  # sage
+	(0.14, 0.28, 0.12),  # dark
+	(0.20, 0.34, 0.12),  # vivid green
+]
+
 
 def build_all():
 	random.seed(42)
@@ -408,9 +485,12 @@ def build_all():
 	for i, (x, y, s) in enumerate(SMALL_ROCK_POSITIONS):
 		make_boulder(f"SmallRock_{i:02d}", x, y, s, island, mat)
 	for i, (x, y, s) in enumerate(TREE_POSITIONS):
-		make_tree(f"Tree_{i:02d}", x, y, s, island, mat)
+		variant = TREE_FOLIAGE_VARIANTS[i % len(TREE_FOLIAGE_VARIANTS)]
+		make_tree(f"Tree_{i:02d}", x, y, s, island, mat, foliage_col=variant)
 	for i, (x, y, h) in enumerate(MONOLITH_POSITIONS):
 		make_monolith(f"Monolith_{i:02d}", x, y, h, island, mat)
+	for i, (x, y, s) in enumerate(BUSH_POSITIONS):
+		make_bush(f"Bush_{i:02d}", x, y, s, island, mat)
 
 	# Active object required by gltf exporter (the M3 export crash gotcha)
 	bpy.ops.object.select_all(action='DESELECT')
