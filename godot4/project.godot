@@ -18,6 +18,7 @@ EventBus="*res://scripts/autoload/event_bus.gd"
 GameData="*res://scripts/sim/game_data.gd"
 GameState="*res://scripts/sim/game_state.gd"
 CombatSim="*res://scripts/sim/combat_sim.gd"
+AudioManager="*res://scripts/autoload/audio_manager.gd"
 
 [display]
 

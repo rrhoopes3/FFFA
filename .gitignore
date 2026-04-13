@@ -1,7 +1,8 @@
 node_modules/
 
-# Local tools (Godot 4.4 binary, ~120 MB) — installed per-machine, never committed
-tools/
+# Local tools — Godot binary (~120 MB) is per-machine, but build scripts are tracked
+tools/*
+!tools/build_sfx.py
 
 # Debug screenshots and scratch
 tmp/
