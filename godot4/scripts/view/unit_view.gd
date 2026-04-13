@@ -1,15 +1,12 @@
 extends Node3D
 ## 3D presentation of one combat unit. Loads its .glb at setup time, then
-## animates procedurally in response to EventBus signals.
-##
-## Procedural animation philosophy:
-##   - idle: subtle Y bob via _process
-##   - walk: position lerp toward target_world_pos
-##   - attack: scale pulse + brief lunge toward target
-##   - cast: emission flash + scale pulse
-##   - hurt: white material flash
-##   - death: shrink + fade + queue_free
-## All driven by transform/material changes — no skeletal rig required.
+## animates via a layered approach:
+##   - Skeletal: AnimationPlayer from .glb drives bone deformations (idle bob,
+##     attack squash, pounce leap, hurt flinch, death collapse, crit spin).
+##   - Procedural: _process drives mesh_root position (movement lerp, lunge,
+##     knockback, idle sway) and material effects (hurt flash, death fade).
+## The two layers complement each other: skeletal handles body language while
+## procedural handles world-space positioning and material effects.
 
 const Hex = preload("res://scripts/sim/hex.gd")
 const HexGrid = preload("res://scripts/view/hex_grid_3d.gd")
@@ -31,6 +28,7 @@ var original_materials: Array = []    # Per-instance original material list
 var hp_bar_bg: MeshInstance3D
 var hp_bar_fill: MeshInstance3D
 var team_disc: MeshInstance3D
+var anim_player: AnimationPlayer      # Skeletal AnimationPlayer from .glb
 
 # ─── Animation state ────────────────────────────────────────────────────────
 var target_world_pos: Vector3 = Vector3.ZERO
@@ -57,6 +55,7 @@ const ATTACK_STRIKE := 0.18
 const CAST_DURATION := 0.45
 const BOB_AMPLITUDE := 0.04
 const BOB_SPEED := 2.5
+const MESH_SCALE := 0.5                # Shrink models relative to hex tiles
 const SWAY_AMPLITUDE := 0.025
 const SWAY_SPEED := 1.7
 const KNOCKBACK_DISTANCE := 0.18
@@ -87,6 +86,8 @@ func setup(p_uid: int, p_unit_id: String, p_hex: String, p_is_player: bool,
 	base_yaw = PI if not is_player else 0.0
 	target_yaw = base_yaw
 	rotation.y = base_yaw
+	# Start skeletal idle animation (tail sway, breathing, ear flicks)
+	_play_anim("idle")
 
 
 func _load_mesh() -> void:
@@ -105,13 +106,16 @@ func _load_mesh() -> void:
 
 	var packed: PackedScene = load(path)
 	var glb_inst := packed.instantiate()
+	glb_inst.scale = Vector3.ONE * MESH_SCALE
 	mesh_root.add_child(glb_inst)
 	_collect_mesh_instances(glb_inst)
+	_find_animation_player(glb_inst)
 	# Origin-correct: shift the mesh so its AABB bottom (feet) sits at y=0,
 	# since the procedural Blender pipeline leaves origins at body-center.
+	# Multiply by MESH_SCALE because the AABB is in unscaled local space.
 	if not mesh_instances.is_empty():
 		var aabb := mesh_instances[0].get_aabb()
-		mesh_root_base_y = -aabb.position.y
+		mesh_root_base_y = -aabb.position.y * MESH_SCALE
 		mesh_root.position.y = mesh_root_base_y
 
 
@@ -126,13 +130,33 @@ func _collect_mesh_instances(node: Node) -> void:
 		_collect_mesh_instances(child)
 
 
+func _find_animation_player(node: Node) -> void:
+	if node is AnimationPlayer:
+		anim_player = node
+		# Mark the idle animation as looping
+		if anim_player.has_animation("idle"):
+			var idle_anim := anim_player.get_animation("idle")
+			idle_anim.loop_mode = Animation.LOOP_LINEAR
+		return
+	for child in node.get_children():
+		if anim_player:
+			return
+		_find_animation_player(child)
+
+
+func _play_anim(anim_name: String) -> void:
+	if anim_player and anim_player.has_animation(anim_name):
+		anim_player.stop()
+		anim_player.play(anim_name)
+
+
 func _build_team_disc() -> void:
 	# Glowing disc under the unit, team-colored, marks selection / team.
 	team_disc = MeshInstance3D.new()
 	team_disc.name = "TeamDisc"
 	var torus := TorusMesh.new()
-	torus.inner_radius = 0.32
-	torus.outer_radius = 0.42
+	torus.inner_radius = 0.32 * MESH_SCALE
+	torus.outer_radius = 0.42 * MESH_SCALE
 	torus.rings = 24
 	torus.ring_segments = 6
 	team_disc.mesh = torus
@@ -162,7 +186,7 @@ func _build_hp_bar() -> void:
 	bg_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bg_mat.no_depth_test = false
 	hp_bar_bg.material_override = bg_mat
-	hp_bar_bg.position = Vector3(0, 1.7, 0)
+	hp_bar_bg.position = Vector3(0, 1.0, 0)
 	add_child(hp_bar_bg)
 
 	hp_bar_fill = MeshInstance3D.new()
@@ -175,7 +199,7 @@ func _build_hp_bar() -> void:
 	fill_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fill_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	hp_bar_fill.material_override = fill_mat
-	hp_bar_fill.position = Vector3(0, 1.7, -0.001)
+	hp_bar_fill.position = Vector3(0, 1.0, -0.001)
 	add_child(hp_bar_fill)
 
 
@@ -194,7 +218,7 @@ func move_to(hex_key_new: String) -> void:
 	target_world_pos = HexGrid.hex_to_world(pos.x, pos.y)
 
 
-func play_attack(toward_hex: String) -> void:
+func play_attack(toward_hex: String, is_crit: bool = false) -> void:
 	attack_timer = ATTACK_DURATION
 	var pos := Hex.parse(toward_hex)
 	var tgt := HexGrid.hex_to_world(pos.x, pos.y)
@@ -207,10 +231,14 @@ func play_attack(toward_hex: String) -> void:
 		target_yaw = atan2(to_tgt.x, to_tgt.z)
 	else:
 		lunge_dir = Vector3.ZERO
+	# Skeletal: crit gets the dramatic spin attack, normal gets standard attack
+	_play_anim("crit" if is_crit else "attack")
 
 
 func play_cast() -> void:
 	cast_timer = CAST_DURATION
+	# Skeletal: pounce's leap-and-land motion layers nicely under the procedural spin
+	_play_anim("pounce")
 
 
 func take_damage(new_hp: int) -> void:
@@ -224,10 +252,12 @@ func take_damage(new_hp: int) -> void:
 	else:
 		hurt_dir = Vector3(0, 0, 1.0 if not is_player else -1.0)
 	_update_hp_bar()
+	_play_anim("hurt")
 
 
 func die() -> void:
 	alive = false
+	_play_anim("death")
 	# Random tumble axis biased toward horizontal so the cat falls over rather
 	# than spinning in place. Also kicks slightly upward + backward.
 	var tumble_axis := Vector3(
@@ -320,6 +350,8 @@ func _process(delta: float) -> void:
 	var stretch := Vector3.ONE
 	if attack_timer > 0.0:
 		attack_timer = maxf(attack_timer - delta, 0.0)
+		if attack_timer <= 0.0:
+			_play_anim("idle")
 		var elapsed := ATTACK_DURATION - attack_timer
 		# Three-phase attack: windup → strike → recover
 		if elapsed < ATTACK_WINDUP:
@@ -359,6 +391,8 @@ func _process(delta: float) -> void:
 	# Cast — spin + float + stretch + glow halo
 	if cast_timer > 0.0:
 		cast_timer = maxf(cast_timer - delta, 0.0)
+		if cast_timer <= 0.0:
+			_play_anim("idle")
 		var t := 1.0 - (cast_timer / CAST_DURATION)
 		var arc := sin(t * PI)         # 0 → 1 → 0 over the cast
 		var glow := arc * 5.0

@@ -294,7 +294,7 @@ func _on_unit_attacked(attacker_uid: int, target_uid: int, _damage: int, is_crit
 	var attacker = combat_views.get(attacker_uid, null)
 	var target = combat_views.get(target_uid, null)
 	if attacker and target:
-		attacker.play_attack(target.hex_key)
+		attacker.play_attack(target.hex_key, is_crit)
 		# Pre-load the target with the knockback direction so the next
 		# unit_damaged signal lands a hit-shake going away from the attacker.
 		var away: Vector3 = target.position - attacker.position

@@ -174,6 +174,10 @@ def clear_scene():
         bpy.data.curves.remove(block)
     for block in list(bpy.data.materials):
         bpy.data.materials.remove(block)
+    for block in list(bpy.data.armatures):
+        bpy.data.armatures.remove(block)
+    for block in list(bpy.data.actions):
+        bpy.data.actions.remove(block)
 
 
 def add_uv_sphere(name, location, scale, segments=24, rings=16):
@@ -493,19 +497,566 @@ def build_cat(unit_id, cfg):
     return joined
 
 
+# ─── Armature + Animation pipeline ────────────────────────────────────
+# Adds a skeletal rig with 12 bones and 7 combat animation actions to each
+# cat mesh, exported as embedded glTF animations.  Bone positions are
+# derived from the same per-unit config that build_cat uses, so the rig
+# always matches the mesh proportions.
+
+from mathutils import Quaternion
+
+def _quat_x(deg):
+    return Quaternion((1, 0, 0), math.radians(deg))
+
+def _quat_y(deg):
+    return Quaternion((0, 1, 0), math.radians(deg))
+
+def _quat_z(deg):
+    return Quaternion((0, 0, 1), math.radians(deg))
+
+def _quat_xz(xdeg, zdeg):
+    return _quat_x(xdeg) @ _quat_z(zdeg)
+
+_REST_Q = (1, 0, 0, 0)
+_REST_S = (1, 1, 1)
+
+
+def _key_bone(rig, bone_name, frame, loc=None, rot=None, scale=None):
+    pb = rig.pose.bones[bone_name]
+    if loc is not None:
+        pb.location = loc
+        pb.keyframe_insert(data_path="location", frame=frame)
+    if rot is not None:
+        pb.rotation_quaternion = rot
+        pb.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+    if scale is not None:
+        pb.scale = scale
+        pb.keyframe_insert(data_path="scale", frame=frame)
+
+
+def _push_nla(rig, action, name, end_frame):
+    track = rig.animation_data.nla_tracks.new()
+    track.name = name
+    strip = track.strips.new(name, 1, action)
+    strip.action_frame_end = end_frame
+    rig.animation_data.action = None
+
+
+def add_armature(unit_id, cfg):
+    """Create an armature matching the cat mesh proportions."""
+    s = cfg.get("scale", 1.0)
+    fluffy = cfg.get("fluffy", False)
+    short_ear = cfg.get("short_ear", False)
+    tank = cfg.get("tank", False)
+
+    body_w = 0.55 * s * (1.15 if tank else 1.0)
+    body_h = 0.50 * s * (1.10 if tank else 1.0)
+    body_z = 0.52 * s
+    head_r = 0.46 * s
+    head_z = 1.10 * s + (0.02 if fluffy else 0.0)
+    head_y = -0.08 * s
+    leg_h = 0.26 * s
+    leg_x = body_w * 0.55
+    leg_y_f = -body_w * 0.48
+    leg_y_b = body_w * 0.50
+    ear_h_val = (0.22 if short_ear else 0.38) * s
+    ear_x_pos = head_r * 0.60
+    ear_z_pos = head_z + head_r * 0.82 - (0.05 if short_ear else 0.0)
+
+    arm_data = bpy.data.armatures.new(f"{unit_id}_Armature")
+    arm_obj = bpy.data.objects.new(f"{unit_id}_Rig", arm_data)
+    bpy.context.collection.objects.link(arm_obj)
+    bpy.context.view_layer.objects.active = arm_obj
+    arm_obj.select_set(True)
+
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm_data.edit_bones
+
+    root = eb.new("Root")
+    root.head = (0, 0, 0)
+    root.tail = (0, 0, 0.15 * s)
+
+    body = eb.new("Body")
+    body.head = (0, 0, body_z - body_h * 0.4)
+    body.tail = (0, 0, body_z + body_h * 0.4)
+    body.parent = root
+
+    head = eb.new("Head")
+    head.head = (0, head_y * 0.3, body_z + body_h * 0.5)
+    head.tail = (0, head_y, head_z + head_r * 0.3)
+    head.parent = body
+
+    for side, sign in [("L", -1), ("R", 1)]:
+        ear = eb.new(f"Ear.{side}")
+        ear.head = (sign * ear_x_pos, head_y, ear_z_pos - ear_h_val * 0.1)
+        ear.tail = (sign * ear_x_pos, head_y, ear_z_pos + ear_h_val * 0.5)
+        ear.parent = head
+
+    tail_pts = [
+        (0, body_w * 0.35, body_z + body_h * 0.10),
+        (0, body_w * 0.75, body_z + body_h * 0.50),
+        (0, body_w * 1.05, body_z + body_h * 0.95),
+        (0, body_w * 0.80, body_z + body_h * 1.55),
+    ]
+    prev = body
+    for i in range(3):
+        t = eb.new(f"Tail.{i+1:03d}")
+        t.head = tail_pts[i]
+        t.tail = tail_pts[i + 1]
+        t.parent = prev if i == 0 else prev_tail
+        t.use_connect = (i > 0)
+        prev_tail = t
+
+    for name, (lx, ly) in [
+        ("Leg.FL", (-leg_x, leg_y_f)),
+        ("Leg.FR", ( leg_x, leg_y_f)),
+        ("Leg.BL", (-leg_x, leg_y_b)),
+        ("Leg.BR", ( leg_x, leg_y_b)),
+    ]:
+        leg = eb.new(name)
+        leg.head = (lx, ly, body_z - body_h * 0.15)
+        leg.tail = (lx, ly, 0.01)
+        leg.parent = body
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    return arm_obj
+
+
+def parent_mesh_to_rig(cat_mesh, rig):
+    """Parent mesh to armature with automatic weights."""
+    bpy.ops.object.mode_set(mode='OBJECT')
+    bpy.ops.object.select_all(action='DESELECT')
+    cat_mesh.select_set(True)
+    rig.select_set(True)
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+
+
+def add_animations(rig, cfg):
+    """Create 7 polished combat animation actions on the armature.
+
+    Location offsets are scaled by the unit's scale factor so animations
+    look proportional across 1-cost runts and 5-cost tanks.
+
+    v2 polish pass: breathing idle, asymmetric ear flicks, butt-wiggle
+    pounce, tremor defend, death twitch, tail whip crit, stagger hurt.
+    """
+    s = cfg.get("scale", 1.0)
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode='POSE')
+    bpy.context.scene.render.fps = 60
+
+    def reset():
+        for pb in rig.pose.bones:
+            pb.location = (0, 0, 0)
+            pb.rotation_quaternion = (1, 0, 0, 0)
+            pb.scale = (1, 1, 1)
+
+    def kb(bone, f, loc=None, rot=None, sc=None):
+        if loc is not None:
+            loc = (loc[0] * s, loc[1] * s, loc[2] * s)
+        _key_bone(rig, bone, f, loc=loc, rot=rot, scale=sc)
+
+    def new_action(name):
+        a = bpy.data.actions.new(name=name)
+        rig.animation_data_create()
+        rig.animation_data.action = a
+        reset()
+        return a
+
+    # ── idle (60 frames, loop) ────────────────────────────────────────
+    # Lifelike breathing, weight shifts, asymmetric ear flicks, lively
+    # tail S-wave, subtle head looking around.
+    act = new_action("idle")
+    # Body: breathing cycle (Z scale pulse) + gentle weight shift
+    for f in range(1, 61, 3):
+        ph = (f - 1) / 60.0 * 2 * math.pi
+        breath_z = math.sin(ph * 2) * 0.018      # breathing bob
+        sway_x  = math.sin(ph) * 0.006            # side-to-side sway
+        shift_y = math.sin(ph * 0.5) * 0.004      # front-back weight shift
+        breath_sc_z = 1.0 + math.sin(ph * 2) * 0.025  # chest expansion
+        breath_sc_x = 1.0 - math.sin(ph * 2) * 0.008  # counterpart
+        kb("Body", f,
+           loc=(sway_x, shift_y, breath_z),
+           sc=(breath_sc_x, breath_sc_x, breath_sc_z))
+    # Head: looks around with tilt + nod (two overlapping sine waves)
+    for f in range(1, 61, 4):
+        ph = (f - 1) / 60.0 * 2 * math.pi
+        tilt  = math.sin(ph) * 4.5                # Z-axis tilt
+        nod   = math.sin(ph * 1.5 + 0.5) * 2.5    # X-axis nod
+        kb("Head", f, rot=tuple(_quat_x(nod) @ _quat_z(tilt)))
+    # Tail: lively S-wave with wider motion, denser keyframes
+    for f in range(1, 61, 3):
+        ph = (f - 1) / 60.0 * 2 * math.pi
+        kb("Tail.001", f, rot=_quat_z(math.sin(ph) * 16))
+        kb("Tail.002", f, rot=_quat_z(math.sin(ph + 0.9) * 24))
+        kb("Tail.003", f, rot=_quat_z(math.sin(ph + 1.8) * 30))
+    # Ears: ASYMMETRIC flicks — left ear twitches at different time than right
+    for f in range(1, 61, 5):
+        ph = (f - 1) / 60.0 * 2 * math.pi
+        # Left ear: quick flick around frame 18-24
+        l_flick = 8.0 * max(0, math.sin((ph - 1.0) * 3)) ** 4
+        # Right ear: flick around frame 38-44
+        r_flick = 8.0 * max(0, math.sin((ph - 2.8) * 3)) ** 4
+        kb("Ear.L", f, rot=_quat_x(-l_flick))
+        kb("Ear.R", f, rot=_quat_x(-r_flick))
+    # Legs: subtle alternating weight shift
+    for f in range(1, 61, 8):
+        ph = (f - 1) / 60.0 * 2 * math.pi
+        shift = math.sin(ph) * 0.006
+        kb("Leg.FL", f, loc=(0, 0, -shift * 0.5))
+        kb("Leg.FR", f, loc=(0, 0,  shift * 0.5))
+        kb("Leg.BL", f, loc=(0, 0,  shift * 0.3))
+        kb("Leg.BR", f, loc=(0, 0, -shift * 0.3))
+    _push_nla(rig, act, "idle", 60)
+
+    # ── attack (25 frames, ~0.42s) ────────────────────────────────────
+    # Ears flatten on windup, asymmetric paw swipe, back legs push,
+    # tail bristles during strike.
+    act = new_action("attack")
+    # rest pose
+    kb("Body", 1, loc=(0,0,0), rot=_REST_Q, sc=_REST_S)
+    kb("Head", 1, rot=_REST_Q); kb("Root", 1, loc=(0,0,0))
+    kb("Leg.FL", 1, rot=_REST_Q); kb("Leg.FR", 1, rot=_REST_Q)
+    kb("Leg.BL", 1, rot=_REST_Q); kb("Leg.BR", 1, rot=_REST_Q)
+    kb("Ear.L", 1, rot=_REST_Q); kb("Ear.R", 1, rot=_REST_Q)
+    kb("Tail.001", 1, rot=_REST_Q); kb("Tail.002", 1, rot=_REST_Q)
+    kb("Tail.003", 1, rot=_REST_Q)
+    # windup — crouch back, ears pin, tail raises
+    kb("Body", 7, loc=(0, 0.07, -0.04), sc=(1.10, 1.10, 0.85))
+    kb("Head", 7, rot=_quat_x(14)); kb("Root", 7, loc=(0, 0.05, -0.01))
+    kb("Ear.L", 7, rot=_quat_x(35)); kb("Ear.R", 7, rot=_quat_x(35))
+    kb("Tail.001", 7, rot=_quat_x(-15)); kb("Tail.002", 7, rot=_quat_z(10))
+    kb("Leg.BL", 7, rot=_quat_x(8)); kb("Leg.BR", 7, rot=_quat_x(8))
+    # strike — lunge forward, one paw swipes (FL does the main swipe)
+    kb("Body", 12, loc=(0, -0.18, 0.03), sc=(0.90, 0.90, 1.15))
+    kb("Head", 12, rot=_quat_x(-22)); kb("Root", 12, loc=(0, -0.14, 0))
+    kb("Leg.FL", 12, rot=_quat_x(-40))  # main swipe paw
+    kb("Leg.FR", 12, rot=_quat_x(-20))  # secondary paw
+    kb("Leg.BL", 12, rot=_quat_x(-15)); kb("Leg.BR", 12, rot=_quat_x(-15))
+    kb("Ear.L", 12, rot=_quat_x(25)); kb("Ear.R", 12, rot=_quat_x(25))
+    kb("Tail.001", 12, rot=_quat_x(-30))  # tail bristles up
+    kb("Tail.002", 12, rot=_quat_z(-15)); kb("Tail.003", 12, rot=_quat_z(-20))
+    # follow-through — slight overshoot, paws return
+    kb("Body", 17, loc=(0, -0.08, 0.01), sc=(1.03, 1.03, 0.97))
+    kb("Head", 17, rot=_quat_x(-6)); kb("Root", 17, loc=(0, -0.05, 0))
+    kb("Leg.FL", 17, rot=_quat_x(-10)); kb("Leg.FR", 17, rot=_quat_x(-5))
+    kb("Leg.BL", 17, rot=_REST_Q); kb("Leg.BR", 17, rot=_REST_Q)
+    kb("Ear.L", 17, rot=_quat_x(8)); kb("Ear.R", 17, rot=_quat_x(8))
+    kb("Tail.001", 17, rot=_quat_x(-10)); kb("Tail.002", 17, rot=_quat_z(-5))
+    # return to rest
+    kb("Body", 25, loc=(0,0,0), rot=_REST_Q, sc=_REST_S)
+    kb("Head", 25, rot=_REST_Q); kb("Root", 25, loc=(0,0,0))
+    kb("Leg.FL", 25, rot=_REST_Q); kb("Leg.FR", 25, rot=_REST_Q)
+    kb("Leg.BL", 25, rot=_REST_Q); kb("Leg.BR", 25, rot=_REST_Q)
+    kb("Ear.L", 25, rot=_REST_Q); kb("Ear.R", 25, rot=_REST_Q)
+    kb("Tail.001", 25, rot=_REST_Q); kb("Tail.002", 25, rot=_REST_Q)
+    kb("Tail.003", 25, rot=_REST_Q)
+    _push_nla(rig, act, "attack", 25)
+
+    # ── pounce (36 frames — with butt wiggle) ─────────────────────────
+    # Classic cat hunting crouch → butt wiggle → explosive launch → land.
+    act = new_action("pounce")
+    kb("Body", 1, loc=(0,0,0), sc=_REST_S, rot=_REST_Q)
+    kb("Root", 1, loc=(0,0,0)); kb("Head", 1, rot=_REST_Q)
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 1, rot=_REST_Q, sc=_REST_S)
+    kb("Ear.L", 1, rot=_REST_Q); kb("Ear.R", 1, rot=_REST_Q)
+    kb("Tail.001", 1, rot=_REST_Q); kb("Tail.002", 1, rot=_REST_Q)
+    kb("Tail.003", 1, rot=_REST_Q)
+    # crouch down — lower, wider stance
+    kb("Body", 5, loc=(0, 0, -0.10), sc=(1.14, 1.14, 0.70))
+    kb("Root", 5, loc=(0, 0.02, -0.02)); kb("Head", 5, rot=_quat_x(12))
+    kb("Ear.L", 5, rot=_quat_x(20)); kb("Ear.R", 5, rot=_quat_x(20))
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 5, sc=(1.12, 1.12, 0.75))
+    # butt wiggle 1 — shift left
+    kb("Body", 8, loc=(-0.03, 0, -0.10), sc=(1.14, 1.14, 0.70), rot=_quat_z(3))
+    kb("Root", 8, loc=(-0.02, 0.02, -0.02))
+    kb("Tail.001", 8, rot=_quat_z(-15)); kb("Tail.002", 8, rot=_quat_z(-20))
+    kb("Tail.003", 8, rot=_quat_z(-25))
+    # butt wiggle 2 — shift right
+    kb("Body", 11, loc=(0.03, 0, -0.10), sc=(1.14, 1.14, 0.70), rot=_quat_z(-3))
+    kb("Root", 11, loc=(0.02, 0.02, -0.02))
+    kb("Tail.001", 11, rot=_quat_z(15)); kb("Tail.002", 11, rot=_quat_z(20))
+    kb("Tail.003", 11, rot=_quat_z(25))
+    # butt wiggle 3 — center + deeper crouch (ready to spring)
+    kb("Body", 14, loc=(0, 0, -0.12), sc=(1.16, 1.16, 0.68), rot=_REST_Q)
+    kb("Root", 14, loc=(0, 0.03, -0.03)); kb("Head", 14, rot=_quat_x(15))
+    kb("Ear.L", 14, rot=_quat_x(35)); kb("Ear.R", 14, rot=_quat_x(35))
+    kb("Tail.001", 14, rot=_REST_Q); kb("Tail.002", 14, rot=_REST_Q)
+    kb("Tail.003", 14, rot=_REST_Q)
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 14, sc=(1.14, 1.14, 0.70))
+    # launch — explosive upward + forward
+    kb("Body", 18, loc=(0, -0.10, 0.20), sc=(0.85, 0.85, 1.25))
+    kb("Root", 18, loc=(0, -0.12, 0.16)); kb("Head", 18, rot=_quat_x(-18))
+    kb("Ear.L", 18, rot=_quat_x(40)); kb("Ear.R", 18, rot=_quat_x(40))
+    for lg in ["Leg.FL","Leg.FR"]:
+        kb(lg, 18, rot=_quat_x(-40), sc=_REST_S)
+    for lg in ["Leg.BL","Leg.BR"]:
+        kb(lg, 18, rot=_quat_x(25), sc=_REST_S)
+    # tail streams out straight behind
+    kb("Tail.001", 18, rot=_quat_x(-20))
+    kb("Tail.002", 18, rot=_quat_x(-10))
+    kb("Tail.003", 18, rot=_quat_x(-5))
+    # apex — stretched out mid-air
+    kb("Body", 23, loc=(0, -0.20, 0.28), sc=(0.92, 0.92, 1.10))
+    kb("Root", 23, loc=(0, -0.25, 0.22)); kb("Head", 23, rot=_quat_x(-10))
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 23, rot=_quat_x(-18), sc=_REST_S)
+    kb("Tail.001", 23, rot=_quat_x(-15))
+    kb("Tail.002", 23, rot=_quat_x(-8))
+    kb("Tail.003", 23, rot=_quat_x(-3))
+    # land — impact squash
+    kb("Body", 28, loc=(0, -0.26, -0.05), sc=(1.18, 1.18, 0.75))
+    kb("Root", 28, loc=(0, -0.32, -0.01)); kb("Head", 28, rot=_quat_x(10))
+    kb("Ear.L", 28, rot=_REST_Q); kb("Ear.R", 28, rot=_REST_Q)
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 28, sc=(1.12, 1.12, 0.82))
+    kb("Tail.001", 28, rot=_quat_z(8))
+    kb("Tail.002", 28, rot=_quat_z(5))
+    # settle to rest
+    kb("Body", 36, loc=(0,0,0), sc=_REST_S, rot=_REST_Q)
+    kb("Root", 36, loc=(0,0,0)); kb("Head", 36, rot=_REST_Q)
+    kb("Ear.L", 36, rot=_REST_Q); kb("Ear.R", 36, rot=_REST_Q)
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 36, rot=_REST_Q, sc=_REST_S)
+    kb("Tail.001", 36, rot=_REST_Q); kb("Tail.002", 36, rot=_REST_Q)
+    kb("Tail.003", 36, rot=_REST_Q)
+    _push_nla(rig, act, "pounce", 36)
+
+    # ── defend (24 frames — brace with tremor) ────────────────────────
+    # Not a static hold: subtle bracing tremor, tail tucks, front paw
+    # raises slightly for a guard stance.
+    act = new_action("defend")
+    kb("Body", 1, loc=(0,0,0), sc=_REST_S); kb("Head", 1, rot=_REST_Q)
+    kb("Root", 1, loc=(0,0,0)); kb("Ear.L", 1, rot=_REST_Q)
+    kb("Ear.R", 1, rot=_REST_Q)
+    kb("Tail.001", 1, rot=_REST_Q); kb("Tail.002", 1, rot=_REST_Q)
+    kb("Tail.003", 1, rot=_REST_Q)
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 1, rot=_REST_Q, sc=_REST_S)
+    # hunker down
+    kb("Body", 8, loc=(0, 0.01, -0.07), sc=(1.16, 1.16, 0.76))
+    kb("Head", 8, rot=_quat_x(18), loc=(0, -0.02, -0.04))
+    kb("Root", 8, loc=(0, 0, -0.03))
+    kb("Ear.L", 8, rot=_quat_x(45)); kb("Ear.R", 8, rot=_quat_x(45))
+    # tail tucks down and curls toward body
+    kb("Tail.001", 8, rot=_quat_x(-30))
+    kb("Tail.002", 8, rot=_quat_x(-20))
+    kb("Tail.003", 8, rot=_quat_x(-15))
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 8, sc=(1.10, 1.10, 0.82))
+    # front paw lifts slightly (guard)
+    kb("Leg.FL", 8, rot=_quat_x(-8), sc=(1.10, 1.10, 0.82))
+    # tremor oscillation 1 — shift slightly right
+    kb("Body", 12, loc=(0.008, 0.01, -0.065), sc=(1.15, 1.15, 0.77))
+    kb("Root", 12, loc=(0.005, 0, -0.03))
+    kb("Head", 12, rot=_quat_xz(17, -2), loc=(0, -0.02, -0.04))
+    # tremor oscillation 2 — shift slightly left
+    kb("Body", 16, loc=(-0.008, 0.01, -0.072), sc=(1.17, 1.17, 0.75))
+    kb("Root", 16, loc=(-0.005, 0, -0.03))
+    kb("Head", 16, rot=_quat_xz(19, 2), loc=(0, -0.02, -0.04))
+    # tremor oscillation 3 — center, tense
+    kb("Body", 20, loc=(0.004, 0.01, -0.068), sc=(1.15, 1.15, 0.76))
+    kb("Root", 20, loc=(0.003, 0, -0.03))
+    kb("Head", 20, rot=_quat_x(18), loc=(0, -0.02, -0.04))
+    # hold at brace
+    kb("Body", 24, loc=(0, 0.01, -0.07), sc=(1.16, 1.16, 0.76))
+    kb("Head", 24, rot=_quat_x(18), loc=(0, -0.02, -0.04))
+    kb("Root", 24, loc=(0, 0, -0.03))
+    kb("Ear.L", 24, rot=_quat_x(45)); kb("Ear.R", 24, rot=_quat_x(45))
+    kb("Tail.001", 24, rot=_quat_x(-30))
+    kb("Tail.002", 24, rot=_quat_x(-20))
+    kb("Tail.003", 24, rot=_quat_x(-15))
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 24, sc=(1.10, 1.10, 0.82))
+    kb("Leg.FL", 24, rot=_quat_x(-8), sc=(1.10, 1.10, 0.82))
+    _push_nla(rig, act, "defend", 24)
+
+    # ── death (40 frames — stagger, fall, twitch) ─────────────────────
+    # Ears droop, tail goes limp, final twitch before stillness.
+    act = new_action("death")
+    kb("Body", 1, loc=(0,0,0), rot=_REST_Q, sc=_REST_S)
+    kb("Head", 1, rot=_REST_Q); kb("Root", 1, loc=(0,0,0), rot=_REST_Q)
+    kb("Ear.L", 1, rot=_REST_Q); kb("Ear.R", 1, rot=_REST_Q)
+    kb("Tail.001", 1, rot=_REST_Q); kb("Tail.002", 1, rot=_REST_Q)
+    kb("Tail.003", 1, rot=_REST_Q)
+    for lg in ["Leg.FL","Leg.FR","Leg.BL","Leg.BR"]:
+        kb(lg, 1, rot=_REST_Q)
+    # stagger — hit from the left
+    kb("Body", 6, loc=(0.04, 0.02, 0.02), rot=_quat_z(-10))
+    kb("Head", 6, rot=_quat_z(-15)); kb("Root", 6, loc=(0.03, 0, 0.01))
+    kb("Ear.L", 6, rot=_quat_x(15)); kb("Ear.R", 6, rot=_quat_x(10))
+    # wobble back — fight to stay up
+    kb("Body", 12, loc=(-0.02, 0.01, 0.01), rot=_quat_z(5))
+    kb("Head", 12, rot=_quat_z(8)); kb("Root", 12, loc=(-0.01, 0, 0))
+    kb("Ear.L", 12, rot=_quat_x(25)); kb("Ear.R", 12, rot=_quat_x(20))
+    # falling — give in
+    kb("Body", 20, loc=(0.09, 0.04, -0.06), rot=_quat_z(-50), sc=(1.06, 1.0, 0.90))
+    kb("Head", 20, rot=_quat_z(-35))
+    kb("Root", 20, loc=(0.07, 0, -0.04), rot=_quat_z(-25))
+    kb("Ear.L", 20, rot=_quat_x(50)); kb("Ear.R", 20, rot=_quat_x(45))
+    kb("Tail.001", 20, rot=_quat_z(18))
+    kb("Tail.002", 20, rot=_quat_x(10))  # tail starting to droop
+    # collapse to ground
+    kb("Body", 28, loc=(0.13, 0.06, -0.13), rot=_quat_z(-88), sc=(1.08, 1.0, 0.86))
+    kb("Head", 28, rot=_quat_z(-65), loc=(0, -0.04, -0.06))
+    kb("Root", 28, loc=(0.11, 0, -0.09), rot=_quat_z(-48))
+    kb("Ear.L", 28, rot=_quat_x(60)); kb("Ear.R", 28, rot=_quat_x(55))
+    for lg in ["Leg.FL","Leg.FR"]:
+        kb(lg, 28, rot=_quat_x(-35))
+    for lg in ["Leg.BL","Leg.BR"]:
+        kb(lg, 28, rot=_quat_x(22))
+    # tail goes limp
+    kb("Tail.001", 28, rot=_quat_z(28))
+    kb("Tail.002", 28, rot=_quat_x(25))
+    kb("Tail.003", 28, rot=_quat_x(30))
+    # final twitch — small spasm
+    kb("Body", 33, loc=(0.14, 0.06, -0.12), rot=_quat_z(-85), sc=(1.06, 1.0, 0.88))
+    kb("Leg.FL", 33, rot=_quat_x(-42))  # leg kicks
+    kb("Tail.003", 33, rot=_quat_x(20))  # tail flick
+    kb("Head", 33, rot=_quat_z(-62), loc=(0, -0.04, -0.06))
+    # settle into stillness
+    kb("Body", 40, loc=(0.13, 0.06, -0.13), rot=_quat_z(-88), sc=(1.08, 1.0, 0.86))
+    kb("Head", 40, rot=_quat_z(-65), loc=(0, -0.04, -0.06))
+    kb("Root", 40, loc=(0.11, 0, -0.09), rot=_quat_z(-48))
+    kb("Ear.L", 40, rot=_quat_x(60)); kb("Ear.R", 40, rot=_quat_x(55))
+    for lg in ["Leg.FL","Leg.FR"]:
+        kb(lg, 40, rot=_quat_x(-35))
+    for lg in ["Leg.BL","Leg.BR"]:
+        kb(lg, 40, rot=_quat_x(22))
+    kb("Tail.001", 40, rot=_quat_z(28))
+    kb("Tail.002", 40, rot=_quat_x(25))
+    kb("Tail.003", 40, rot=_quat_x(30))
+    _push_nla(rig, act, "death", 40)
+
+    # ── crit (34 frames — dramatic spin with tail whip) ──────────────
+    # Ears flatten, tail whips during spin, impact lingers for
+    # dramatic sell, more vertical arc during flight.
+    act = new_action("crit")
+    kb("Body", 1, loc=(0,0,0), rot=_REST_Q, sc=_REST_S)
+    kb("Head", 1, rot=_REST_Q); kb("Root", 1, loc=(0,0,0), rot=_REST_Q)
+    kb("Leg.FL", 1, rot=_REST_Q); kb("Leg.FR", 1, rot=_REST_Q)
+    kb("Leg.BL", 1, rot=_REST_Q); kb("Leg.BR", 1, rot=_REST_Q)
+    kb("Ear.L", 1, rot=_REST_Q); kb("Ear.R", 1, rot=_REST_Q)
+    kb("Tail.001", 1, rot=_REST_Q); kb("Tail.002", 1, rot=_REST_Q)
+    kb("Tail.003", 1, rot=_REST_Q)
+    # dramatic crouch — ears pin, tail coils
+    kb("Body", 6, loc=(0, 0.09, -0.08), sc=(1.18, 1.18, 0.68))
+    kb("Head", 6, rot=_quat_x(20)); kb("Root", 6, loc=(0, 0.07, -0.03))
+    kb("Ear.L", 6, rot=_quat_x(40)); kb("Ear.R", 6, rot=_quat_x(40))
+    kb("Tail.001", 6, rot=_quat_z(-25)); kb("Tail.002", 6, rot=_quat_z(-20))
+    kb("Tail.003", 6, rot=_quat_z(-15))
+    kb("Leg.BL", 6, rot=_quat_x(10)); kb("Leg.BR", 6, rot=_quat_x(10))
+    # spin launch — upward + rotation begins
+    spin_90 = Quaternion((0, 0, 1), math.radians(90))
+    kb("Body", 10, loc=(0, -0.05, 0.14), rot=tuple(spin_90), sc=(0.85, 0.85, 1.22))
+    kb("Head", 10, rot=_quat_x(-12)); kb("Root", 10, loc=(0, -0.07, 0.10))
+    # tail whips the opposite direction of the spin
+    kb("Tail.001", 10, rot=_quat_z(30)); kb("Tail.002", 10, rot=_quat_z(25))
+    kb("Tail.003", 10, rot=_quat_z(20))
+    kb("Leg.FL", 10, rot=_quat_x(-25)); kb("Leg.FR", 10, rot=_quat_x(-25))
+    kb("Leg.BL", 10, rot=_quat_x(15)); kb("Leg.BR", 10, rot=_quat_x(15))
+    # spin mid — full rotation, peak height
+    spin_270 = Quaternion((0, 0, 1), math.radians(270))
+    kb("Body", 14, loc=(0, -0.12, 0.16), rot=tuple(spin_270), sc=(0.88, 0.88, 1.18))
+    kb("Root", 14, loc=(0, -0.14, 0.10))
+    # tail trails dramatically
+    kb("Tail.001", 14, rot=_quat_z(-35)); kb("Tail.002", 14, rot=_quat_z(-30))
+    kb("Tail.003", 14, rot=_quat_z(-25))
+    # power strike — coming down hard
+    spin_360 = Quaternion((0, 0, 1), math.radians(355))
+    kb("Body", 19, loc=(0, -0.25, -0.03), rot=tuple(spin_360), sc=(0.82, 0.82, 1.25))
+    kb("Head", 19, rot=_quat_x(-28)); kb("Root", 19, loc=(0, -0.22, -0.01))
+    kb("Leg.FL", 19, rot=_quat_x(-42)); kb("Leg.FR", 19, rot=_quat_x(-42))
+    kb("Leg.BL", 19, rot=_REST_Q); kb("Leg.BR", 19, rot=_REST_Q)
+    kb("Tail.001", 19, rot=_quat_z(20)); kb("Tail.002", 19, rot=_quat_z(15))
+    kb("Tail.003", 19, rot=_quat_z(10))
+    # impact HOLD — linger here for dramatic sell (2 frames)
+    kb("Body", 21, loc=(0, -0.24, -0.05), rot=_REST_Q, sc=(1.22, 1.22, 0.72))
+    kb("Head", 21, rot=_quat_x(-15)); kb("Root", 21, loc=(0, -0.18, -0.02))
+    kb("Leg.FL", 21, rot=_quat_x(-20)); kb("Leg.FR", 21, rot=_quat_x(-20))
+    kb("Ear.L", 21, rot=_quat_x(20)); kb("Ear.R", 21, rot=_quat_x(20))
+    # bounce back up from impact
+    kb("Body", 26, loc=(0, -0.08, 0.02), rot=_REST_Q, sc=(0.96, 0.96, 1.06))
+    kb("Head", 26, rot=_quat_x(-4)); kb("Root", 26, loc=(0, -0.06, 0))
+    kb("Leg.FL", 26, rot=_quat_x(-5)); kb("Leg.FR", 26, rot=_quat_x(-5))
+    kb("Ear.L", 26, rot=_quat_x(5)); kb("Ear.R", 26, rot=_quat_x(5))
+    kb("Tail.001", 26, rot=_quat_z(5)); kb("Tail.002", 26, rot=_REST_Q)
+    # return to rest
+    kb("Body", 34, loc=(0,0,0), rot=_REST_Q, sc=_REST_S)
+    kb("Head", 34, rot=_REST_Q); kb("Root", 34, loc=(0,0,0), rot=_REST_Q)
+    kb("Leg.FL", 34, rot=_REST_Q); kb("Leg.FR", 34, rot=_REST_Q)
+    kb("Leg.BL", 34, rot=_REST_Q); kb("Leg.BR", 34, rot=_REST_Q)
+    kb("Ear.L", 34, rot=_REST_Q); kb("Ear.R", 34, rot=_REST_Q)
+    kb("Tail.001", 34, rot=_REST_Q); kb("Tail.002", 34, rot=_REST_Q)
+    kb("Tail.003", 34, rot=_REST_Q)
+    _push_nla(rig, act, "crit", 34)
+
+    # ── hurt (18 frames — flinch with stagger) ────────────────────────
+    # Ears pin, tail puffs, sideways stagger, head shake on recovery.
+    act = new_action("hurt")
+    kb("Body", 1, loc=(0,0,0), rot=_REST_Q, sc=_REST_S)
+    kb("Head", 1, rot=_REST_Q); kb("Root", 1, loc=(0,0,0))
+    kb("Ear.L", 1, rot=_REST_Q); kb("Ear.R", 1, rot=_REST_Q)
+    kb("Tail.001", 1, rot=_REST_Q, sc=_REST_S)
+    kb("Tail.002", 1, rot=_REST_Q, sc=_REST_S)
+    kb("Tail.003", 1, rot=_REST_Q, sc=_REST_S)
+    # flinch — recoil back + sideways stagger
+    kb("Body", 4, loc=(0.025, 0.07, -0.04), rot=_quat_xz(10, -5), sc=(1.12, 1.12, 0.82))
+    kb("Head", 4, rot=_quat_xz(18, -8)); kb("Root", 4, loc=(0.02, 0.06, -0.02))
+    kb("Ear.L", 4, rot=_quat_x(45)); kb("Ear.R", 4, rot=_quat_x(40))
+    # tail puffs up (bristle)
+    kb("Tail.001", 4, rot=_quat_x(-20), sc=(1.3, 1.3, 1.0))
+    kb("Tail.002", 4, rot=_quat_z(10), sc=(1.25, 1.25, 1.0))
+    kb("Tail.003", 4, sc=(1.2, 1.2, 1.0))
+    # bounce — rebound
+    kb("Body", 8, loc=(-0.01, 0.03, 0.015), rot=_quat_xz(3, 3), sc=(0.95, 0.95, 1.06))
+    kb("Head", 8, rot=_quat_xz(5, 6)); kb("Root", 8, loc=(-0.01, 0.02, 0))
+    kb("Ear.L", 8, rot=_quat_x(20)); kb("Ear.R", 8, rot=_quat_x(18))
+    kb("Tail.001", 8, sc=(1.15, 1.15, 1.0))
+    kb("Tail.002", 8, sc=(1.12, 1.12, 1.0))
+    # head shake on recovery
+    kb("Head", 11, rot=_quat_z(-4))
+    kb("Head", 14, rot=_quat_z(3))
+    # return to rest
+    kb("Body", 18, loc=(0,0,0), rot=_REST_Q, sc=_REST_S)
+    kb("Head", 18, rot=_REST_Q); kb("Root", 18, loc=(0,0,0))
+    kb("Ear.L", 18, rot=_REST_Q); kb("Ear.R", 18, rot=_REST_Q)
+    kb("Tail.001", 18, rot=_REST_Q, sc=_REST_S)
+    kb("Tail.002", 18, rot=_REST_Q, sc=_REST_S)
+    kb("Tail.003", 18, rot=_REST_Q, sc=_REST_S)
+    _push_nla(rig, act, "hurt", 18)
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+
 def export_glb(unit_id):
     out_path = os.path.join(OUT_DIR, f"{unit_id}.glb").replace("\\", "/")
     os.makedirs(OUT_DIR, exist_ok=True)
-    # Make sure something is active before gltf2 reads context.active_object
-    obj = bpy.data.objects.get(unit_id)
-    if obj is not None:
-        bpy.context.view_layer.objects.active = obj
-        obj.select_set(True)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Select both mesh and rig for export
+    bpy.ops.object.select_all(action='DESELECT')
+    mesh_obj = bpy.data.objects.get(unit_id)
+    rig_obj = bpy.data.objects.get(f"{unit_id}_Rig")
+    if mesh_obj:
+        mesh_obj.select_set(True)
+    if rig_obj:
+        rig_obj.select_set(True)
+        bpy.context.view_layer.objects.active = rig_obj
+    elif mesh_obj:
+        bpy.context.view_layer.objects.active = mesh_obj
+
     bpy.ops.export_scene.gltf(
         filepath=out_path,
         export_format="GLB",
         use_selection=True,
-        export_apply=True,
+        export_apply=False,
+        export_animations=True,
+        export_nla_strips=True,
     )
     return out_path
 
@@ -513,7 +1064,10 @@ def export_glb(unit_id):
 def build_one(unit_id):
     cfg = UNIT_CONFIGS[unit_id]
     clear_scene()
-    build_cat(unit_id, cfg)
+    cat_mesh = build_cat(unit_id, cfg)
+    rig = add_armature(unit_id, cfg)
+    parent_mesh_to_rig(cat_mesh, rig)
+    add_animations(rig, cfg)
     return export_glb(unit_id)
 
 
