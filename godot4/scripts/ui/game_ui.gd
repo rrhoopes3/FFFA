@@ -60,6 +60,13 @@ var synergy_list: VBoxContainer
 var status_label: Label
 var drop_catcher: Control       # Fullscreen, mouse-pass, accepts drops over 3D
 var banner_label: Label         # Big centered overlay — FIGHT / VICTORY / DEFEAT
+var tooltip_panel: PanelContainer
+var tooltip_name_label: Label
+var tooltip_meta_label: Label
+var tooltip_stats_label: Label
+var tooltip_ability_label: Label
+var game_over_overlay: Control
+var game_over_label: Label
 
 
 func _ready() -> void:
@@ -82,6 +89,7 @@ func _ready() -> void:
 	EventBus.combat_started.connect(_on_combat_started)
 	EventBus.combat_ended.connect(_on_combat_ended)
 	EventBus.banner_requested.connect(_show_banner)
+	EventBus.game_over.connect(_on_game_over)
 
 	# Hook up the arena's hex click → return-to-bench.
 	if arena_view == null:
@@ -184,6 +192,8 @@ func _build_ui() -> void:
 	_build_action_buttons()
 	_build_status_line()
 	_build_banner()
+	_build_tooltip()
+	_build_game_over_overlay()
 
 
 func _styled_panel(bg: Color, border: Color = Color(0, 0, 0, 0)) -> StyleBoxFlat:
@@ -431,6 +441,132 @@ func _build_status_line() -> void:
 	add_child(status_label)
 
 
+func _build_tooltip() -> void:
+	tooltip_panel = PanelContainer.new()
+	tooltip_panel.add_theme_stylebox_override(
+		"panel", _styled_panel(Color(0.05, 0.07, 0.14, 0.96), Color("#FBBF24", 0.85)),
+	)
+	tooltip_panel.visible = false
+	tooltip_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tooltip_panel.z_index = 100
+	tooltip_panel.custom_minimum_size = Vector2(260, 0)
+	add_child(tooltip_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tooltip_panel.add_child(vbox)
+
+	tooltip_name_label = Label.new()
+	tooltip_name_label.add_theme_font_size_override("font_size", 16)
+	tooltip_name_label.add_theme_color_override("font_color", Color("#F8FAFC"))
+	tooltip_name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(tooltip_name_label)
+
+	tooltip_meta_label = Label.new()
+	tooltip_meta_label.add_theme_font_size_override("font_size", 11)
+	tooltip_meta_label.add_theme_color_override("font_color", Color("#94A3B8"))
+	tooltip_meta_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(tooltip_meta_label)
+
+	var sep1 := HSeparator.new()
+	sep1.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(sep1)
+
+	tooltip_stats_label = Label.new()
+	tooltip_stats_label.add_theme_font_size_override("font_size", 12)
+	tooltip_stats_label.add_theme_color_override("font_color", Color("#E5E7EB"))
+	tooltip_stats_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(tooltip_stats_label)
+
+	var sep2 := HSeparator.new()
+	sep2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(sep2)
+
+	tooltip_ability_label = Label.new()
+	tooltip_ability_label.add_theme_font_size_override("font_size", 11)
+	tooltip_ability_label.add_theme_color_override("font_color", Color("#FBBF24"))
+	tooltip_ability_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tooltip_ability_label.custom_minimum_size = Vector2(244, 0)
+	tooltip_ability_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(tooltip_ability_label)
+
+
+func _build_game_over_overlay() -> void:
+	game_over_overlay = Control.new()
+	game_over_overlay.anchor_right = 1.0
+	game_over_overlay.anchor_bottom = 1.0
+	game_over_overlay.visible = false
+	game_over_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	game_over_overlay.z_index = 200
+	add_child(game_over_overlay)
+
+	var scrim := ColorRect.new()
+	scrim.anchor_right = 1.0
+	scrim.anchor_bottom = 1.0
+	scrim.color = Color(0, 0, 0, 0.75)
+	scrim.mouse_filter = Control.MOUSE_FILTER_STOP
+	game_over_overlay.add_child(scrim)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override(
+		"panel", _styled_panel(Color(0.08, 0.10, 0.16, 0.98), Color("#FBBF24", 1.0)),
+	)
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -260
+	panel.offset_top = -140
+	panel.offset_right = 260
+	panel.offset_bottom = 140
+	game_over_overlay.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "GAME OVER"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 54)
+	title.add_theme_color_override("font_color", Color("#EF4444"))
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	title.add_theme_constant_override("outline_size", 8)
+	vbox.add_child(title)
+
+	game_over_label = Label.new()
+	game_over_label.text = ""
+	game_over_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	game_over_label.add_theme_font_size_override("font_size", 22)
+	game_over_label.add_theme_color_override("font_color", Color("#F8FAFC"))
+	vbox.add_child(game_over_label)
+
+	var play_again := Button.new()
+	play_again.text = "▶  PLAY AGAIN"
+	play_again.custom_minimum_size = Vector2(240, 48)
+	play_again.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	play_again.add_theme_font_size_override("font_size", 22)
+	play_again.pressed.connect(_on_play_again_pressed)
+	vbox.add_child(play_again)
+
+
+func _on_play_again_pressed() -> void:
+	game_over_overlay.visible = false
+	GameState.start_game()
+	if arena_view and arena_view.has_method("rebuild_shop_view"):
+		arena_view.rebuild_shop_view()
+	_refresh_hud()
+	_refresh_bench()
+	_refresh_shop()
+	_refresh_synergies()
+	fight_button.disabled = false
+	reroll_button.disabled = false
+	for c in shop_cards:
+		c.disabled = false
+
+
 func _build_drop_catcher() -> void:
 	# Fullscreen Control that catches drag-drop releases over the 3D arena
 	# (anywhere not eaten by a smaller Control). Mouse_filter = PASS so
@@ -453,21 +589,44 @@ func _make_bench_slot(index: int) -> Control:
 	slot.set_script(_make_bench_slot_script())
 	slot.set_meta("ui", self)
 	slot.set_meta("index", index)
+	slot.mouse_filter = Control.MOUSE_FILTER_STOP
+	slot.mouse_entered.connect(_on_bench_slot_hovered.bind(slot, index))
+	slot.mouse_exited.connect(_hide_tooltip)
+
+	# Portrait fills most of the slot, labels sit on top with a dark scrim.
+	var portrait := TextureRect.new()
+	portrait.name = "Portrait"
+	portrait.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	portrait.anchor_right = 1.0
+	portrait.anchor_bottom = 1.0
+	portrait.offset_left = 3
+	portrait.offset_top = 3
+	portrait.offset_right = -3
+	portrait.offset_bottom = -3
+	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	slot.add_child(portrait)
 
 	var name_label := Label.new()
 	name_label.name = "NameLabel"
 	name_label.text = ""
-	name_label.add_theme_font_size_override("font_size", 11)
+	name_label.add_theme_font_size_override("font_size", 10)
 	name_label.add_theme_color_override("font_color", Color("#F8FAFC"))
+	name_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	name_label.add_theme_constant_override("outline_size", 3)
+	name_label.anchor_left = 0.0
+	name_label.anchor_top = 1.0
 	name_label.anchor_right = 1.0
 	name_label.anchor_bottom = 1.0
 	name_label.offset_left = 4
-	name_label.offset_top = 4
+	name_label.offset_top = -26
 	name_label.offset_right = -4
-	name_label.offset_bottom = -4
+	name_label.offset_bottom = -2
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	name_label.clip_text = true
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot.add_child(name_label)
 
 	var star_label := Label.new()
@@ -475,11 +634,15 @@ func _make_bench_slot(index: int) -> Control:
 	star_label.text = ""
 	star_label.add_theme_font_size_override("font_size", 14)
 	star_label.add_theme_color_override("font_color", Color("#FBBF24"))
-	star_label.anchor_left = 1.0
+	star_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	star_label.add_theme_constant_override("outline_size", 3)
+	star_label.anchor_left = 0.0
 	star_label.anchor_right = 1.0
-	star_label.offset_left = -22
+	star_label.offset_left = 2
 	star_label.offset_top = 2
 	star_label.offset_right = -2
+	star_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	star_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot.add_child(star_label)
 
 	return slot
@@ -494,6 +657,8 @@ func _make_shop_card(index: int) -> Button:
 	card.clip_contents = true
 	card.set_meta("index", index)
 	card.pressed.connect(_on_shop_card_pressed.bind(index))
+	card.mouse_entered.connect(_on_shop_card_hovered.bind(card, index))
+	card.mouse_exited.connect(_hide_tooltip)
 
 	# Portrait image — fills top portion of the card
 	var portrait := TextureRect.new()
@@ -597,19 +762,24 @@ func _refresh_bench() -> void:
 		var u = GameState.bench[i]
 		var name_label: Label = slot.get_node("NameLabel")
 		var star_label: Label = slot.get_node("StarLabel")
+		var portrait: TextureRect = slot.get_node_or_null("Portrait")
 		if u == null:
 			name_label.text = ""
 			star_label.text = ""
+			if portrait: portrait.texture = null
 			slot.add_theme_stylebox_override("panel", _styled_panel(Color(0.12, 0.14, 0.20, 0.95), Color("#475569")))
 		else:
 			var data: Dictionary = GameData.units_data.get(u.id, {})
 			name_label.text = data.get("name", u.id)
 			star_label.text = "★".repeat(int(u.stars))
+			if portrait:
+				var path := "res://art/portraits/%s.png" % u.id
+				portrait.texture = load(path) if ResourceLoader.exists(path) else null
 			var faction: String = data.get("faction", "")
 			var border: Color = FACTION_COLORS.get(faction, Color("#94A3B8"))
 			var cost: int = int(data.get("cost", 1))
 			var bg: Color = COST_COLORS.get(cost, Color("#475569"))
-			bg.a = 0.7
+			bg.a = 0.85
 			slot.add_theme_stylebox_override("panel", _styled_panel(bg, border))
 
 
@@ -705,6 +875,27 @@ func _on_combat_ended(player_won: bool) -> void:
 	_refresh_shop()
 	_refresh_bench()
 	_refresh_synergies()
+
+
+func _on_game_over(_placement: int) -> void:
+	# Freeze further combat input and show the end-of-run overlay a beat after
+	# the DEFEAT banner fires so the player sees the killing blow first.
+	fight_button.disabled = true
+	reroll_button.disabled = true
+	levelup_button.disabled = true
+	for c in shop_cards:
+		c.disabled = true
+	var reached := GameState.current_round
+	game_over_label.text = "You reached round %d." % reached
+	get_tree().create_timer(1.6).timeout.connect(_reveal_game_over)
+
+
+func _reveal_game_over() -> void:
+	if game_over_overlay:
+		game_over_overlay.visible = true
+		game_over_overlay.modulate = Color(1, 1, 1, 0)
+		var tw := create_tween()
+		tw.tween_property(game_over_overlay, "modulate:a", 1.0, 0.5)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -817,6 +1008,142 @@ func handle_drop_on_sell(drag_data: Variant) -> void:
 func _set_status(text: String) -> void:
 	if status_label:
 		status_label.text = text
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  TOOLTIPS — hover over a shop card or bench slot to see full stats + ability
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _on_shop_card_hovered(card: Control, index: int) -> void:
+	if index >= GameState.shop_units.size():
+		return
+	var unit_id: String = GameState.shop_units[index]
+	if unit_id.is_empty():
+		return
+	_show_tooltip_for(unit_id, card, 1)
+
+
+func _on_bench_slot_hovered(slot: Control, index: int) -> void:
+	var u = GameState.bench[index]
+	if u == null:
+		return
+	_show_tooltip_for(u.id, slot, int(u.stars))
+
+
+func _show_tooltip_for(unit_id: String, anchor: Control, stars: int) -> void:
+	var data: Dictionary = GameData.units_data.get(unit_id, {})
+	if data.is_empty():
+		return
+	var name_str: String = data.get("name", unit_id)
+	var faction: String = data.get("faction", "")
+	var cost: int = int(data.get("cost", 1))
+	var role: String = data.get("role", "")
+
+	tooltip_name_label.text = "%s  %s" % [name_str, "★".repeat(stars)]
+	var cost_col: Color = COST_COLORS.get(cost, Color("#94A3B8"))
+	tooltip_name_label.add_theme_color_override("font_color", cost_col.lightened(0.25))
+
+	var faction_col: Color = FACTION_COLORS.get(faction, Color("#94A3B8"))
+	tooltip_meta_label.text = "%s  ·  %s  ·  %dg" % [faction, role, cost]
+	tooltip_meta_label.add_theme_color_override("font_color", faction_col.lightened(0.15))
+
+	var stats: Dictionary = data.get("stats", {})
+	var hp: int = int(stats.get("hp", 0))
+	var atk: int = int(stats.get("attack", 0))
+	var rng: int = int(stats.get("range", 0))
+	var spd: float = float(stats.get("speed", 1.0))
+	if stars >= 2:
+		var mult: float = GameData.STAR_MULTIPLIERS.get(stars, 1.0)
+		hp = int(hp * mult)
+		atk = int(atk * mult)
+	tooltip_stats_label.text = "HP %d   ATK %d   RNG %d   SPD %.1f" % [hp, atk, rng, spd]
+
+	var ability: Dictionary = data.get("ability", {})
+	var ability_name: String = ability.get("name", "—")
+	var ability_desc: String = _describe_ability(ability)
+	tooltip_ability_label.text = "✦  %s\n%s" % [ability_name, ability_desc]
+
+	tooltip_panel.visible = true
+	await get_tree().process_frame  # wait for layout so size is correct
+	_position_tooltip_near(anchor)
+
+
+func _position_tooltip_near(anchor: Control) -> void:
+	if not is_instance_valid(anchor) or not tooltip_panel.visible:
+		return
+	var anchor_rect := anchor.get_global_rect()
+	var tt_size := tooltip_panel.size
+	# Default: above the anchor
+	var pos := Vector2(
+		anchor_rect.position.x + anchor_rect.size.x * 0.5 - tt_size.x * 0.5,
+		anchor_rect.position.y - tt_size.y - 8.0,
+	)
+	var vp := get_viewport_rect().size
+	# If it would go off the top, flip below the anchor
+	if pos.y < 8.0:
+		pos.y = anchor_rect.position.y + anchor_rect.size.y + 8.0
+	pos.x = clamp(pos.x, 8.0, vp.x - tt_size.x - 8.0)
+	pos.y = clamp(pos.y, 8.0, vp.y - tt_size.y - 8.0)
+	tooltip_panel.position = pos
+
+
+func _hide_tooltip() -> void:
+	if tooltip_panel:
+		tooltip_panel.visible = false
+
+
+## Turn a raw ability definition into a human-readable line.
+func _describe_ability(ability: Dictionary) -> String:
+	var trigger: String = ability.get("trigger", "passive")
+	var effect: Dictionary = ability.get("effect", {})
+	var parts: Array[String] = []
+	parts.append("(%s)" % trigger.to_upper())
+
+	if effect.has("aoe_damage_mult"):
+		parts.append("AOE %.0f%% ATK" % (float(effect.aoe_damage_mult) * 100.0))
+	elif effect.has("damage_mult"):
+		parts.append("%.0f%% ATK" % (float(effect.damage_mult) * 100.0))
+
+	if effect.has("aoe_stun"):
+		var s = effect.aoe_stun
+		if s is Dictionary:
+			parts.append("AOE stun %.1fs" % float(s.get("duration", 1.0)))
+		else:
+			parts.append("AOE stun %.1fs" % float(s))
+	elif effect.has("stun"):
+		parts.append("stun %.1fs" % float(effect.stun))
+	if effect.has("aoe_silence"):
+		parts.append("silence %.0fs" % float(effect.aoe_silence))
+	if effect.has("ally_heal"):
+		parts.append("heal allies %d%%" % int(effect.ally_heal))
+	if effect.has("ally_shield"):
+		parts.append("shield allies %d" % int(effect.ally_shield))
+	if effect.has("poison"):
+		var p = effect.poison
+		if p is Dictionary:
+			parts.append("poison %d/s" % int(p.get("damage", 0)))
+	if effect.has("armor_shred"):
+		parts.append("armor shred %d" % int(effect.armor_shred))
+	if effect.has("crit_chance"):
+		parts.append("crit +%d%%" % int(effect.crit_chance))
+	if effect.has("execute_threshold"):
+		parts.append("execute <%d%% HP" % int(effect.execute_threshold))
+	if effect.has("revive_pct"):
+		parts.append("revive at %d%% HP" % int(effect.revive_pct))
+	if effect.has("dodge_chance"):
+		parts.append("dodge %d%%" % int(effect.dodge_chance))
+	if effect.has("gold_on_kill"):
+		parts.append("+%d gold on kill" % int(effect.gold_on_kill))
+	if effect.has("hp_regen_pct"):
+		parts.append("regen %d%%/s" % int(effect.hp_regen_pct))
+	if effect.has("ally_hp_amp") or effect.has("hp_amp"):
+		parts.append("ally HP amp")
+	if effect.has("assassin_leap") or effect.has("blink_backline"):
+		parts.append("leap to backline")
+
+	if parts.size() == 1:
+		parts.append("see ability card for effects")
+	return " · ".join(parts)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

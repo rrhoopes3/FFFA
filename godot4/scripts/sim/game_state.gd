@@ -342,9 +342,18 @@ func _emit_synergies() -> void:
 func start_game() -> void:
 	reset()
 	roll_initial_shop()
+	roll_enemy_preview()
 	EventBus.gold_changed.emit(gold)
 	EventBus.health_changed.emit(health)
 	EventBus.level_changed.emit(player_level)
 	EventBus.round_changed.emit(current_round)
 	EventBus.shop_refreshed.emit()
 	_emit_synergies()
+
+
+## Pre-roll the next round's enemy board and broadcast it so the view layer
+## can render a scouting preview. CombatSim.start_combat uses this same
+## enemy_board when the fight begins — it's not a re-roll.
+func roll_enemy_preview() -> void:
+	enemy_board = CombatSim.generate_enemy_board(current_round)
+	EventBus.enemy_preview_ready.emit(enemy_board)

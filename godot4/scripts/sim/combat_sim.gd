@@ -590,6 +590,8 @@ func _end_combat(player_won: bool) -> void:
 	EventBus.gold_changed.emit(GameState.gold)
 	EventBus.round_changed.emit(GameState.current_round)
 	GameState.roll_initial_shop()
+	# Pre-roll the next round's enemy team so the player can scout before fighting.
+	GameState.roll_enemy_preview()
 	EventBus.combat_ended.emit(player_won)
 
 	if GameState.health <= 0:

@@ -26,9 +26,11 @@ const CAMERA_LOOK_AT := Vector3(0, 0.4, 0)
 const COMBAT_ORBIT_SPEED := 0.10       # rad/sec — slow enough to be felt, not noticed
 const COMBAT_DOLLY_ZOOM := 0.82        # multiplier on the base offset during combat
 
-# Two parallel view dictionaries keyed differently. We never have both modes
-# populated at the same time — phase transitions clear one and build the other.
-var shop_views: Dictionary = {}    # hex_key (String) → UnitView
+# Three parallel view dictionaries keyed differently. shop_views + preview_views
+# coexist during shop phase (player pieces + scouting enemies). combat_views is
+# populated only during the fight — phase transitions clear the others.
+var shop_views: Dictionary = {}    # hex_key (String) → UnitView (player side)
+var preview_views: Dictionary = {} # hex_key (String) → UnitView (enemy scouting)
 var combat_views: Dictionary = {}  # uid (int) → UnitView
 var phase: String = "shop"
 
@@ -62,6 +64,14 @@ func _ready() -> void:
 	EventBus.unit_placed.connect(_on_unit_placed)
 	EventBus.unit_removed.connect(_on_unit_removed)
 	EventBus.units_swapped.connect(_on_units_swapped)
+	EventBus.enemy_preview_ready.connect(_on_enemy_preview_ready)
+	EventBus.unit_merged.connect(_on_unit_merged_celebrate)
+
+	# GameUI is a descendant and _ready's bottom-up — so GameState.start_game
+	# has already fired enemy_preview_ready before we got here. Catch up using
+	# whatever the current enemy_board is.
+	if not GameState.enemy_board.is_empty():
+		_on_enemy_preview_ready(GameState.enemy_board)
 
 	# Combat signals
 	EventBus.combat_started.connect(_on_combat_started)
@@ -194,6 +204,9 @@ func rebuild_shop_view() -> void:
 	for hex_key in GameState.player_board:
 		var u = GameState.player_board[hex_key]
 		_spawn_shop_unit(u.id, u.stars, hex_key)
+	# Also refresh the scouting preview from whatever GameState has now.
+	if not GameState.enemy_board.is_empty():
+		_on_enemy_preview_ready(GameState.enemy_board)
 
 
 func _spawn_shop_unit(unit_id: String, stars: int, hex_key: String) -> void:
@@ -231,6 +244,61 @@ func _on_unit_removed(_unit_id: String, hex_key: String) -> void:
 		shop_views.erase(hex_key)
 
 
+func _on_enemy_preview_ready(enemy_board: Dictionary) -> void:
+	# Rebuild the scouting preview whenever the next round's enemy team is rolled.
+	_clear_preview_views()
+	if phase != "shop":
+		return
+	for hex_key in enemy_board:
+		var u = enemy_board[hex_key]
+		var view: Node3D = UnitView.new()
+		view.name = "Preview_%s" % hex_key
+		add_child(view)
+		view.setup(hash(hex_key) ^ 0x7FFF, u.id, hex_key, false, u.get("stars", 1), 100)
+		_make_preview_translucent(view)
+		preview_views[hex_key] = view
+
+
+func _clear_preview_views() -> void:
+	for view in preview_views.values():
+		if is_instance_valid(view):
+			view.queue_free()
+	preview_views.clear()
+
+
+func _make_preview_translucent(view: Node3D) -> void:
+	# Dim + desaturate the unit so it reads as "not actually here yet". HP bar
+	# is hidden since these aren't combat units. Team disc stays but is dimmed.
+	if view.has_node("HPBarBG"):
+		view.get_node("HPBarBG").visible = false
+	if view.has_node("HPBarFill"):
+		view.get_node("HPBarFill").visible = false
+	# Tint body + team disc
+	_tint_preview_subtree(view, 0.55)
+
+
+func _tint_preview_subtree(node: Node, alpha: float) -> void:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		var surf_count := 0
+		if mi.mesh:
+			surf_count = mi.mesh.get_surface_count()
+		for i in surf_count:
+			var src_mat: Material = mi.get_surface_override_material(i)
+			if src_mat == null and mi.mesh:
+				src_mat = mi.mesh.surface_get_material(i)
+			if src_mat is BaseMaterial3D:
+				var m := (src_mat as BaseMaterial3D).duplicate() as BaseMaterial3D
+				m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				var c := m.albedo_color
+				c.a = alpha
+				c = c.lerp(Color(0.35, 0.38, 0.45, alpha), 0.35)
+				m.albedo_color = c
+				mi.set_surface_override_material(i, m)
+	for child in node.get_children():
+		_tint_preview_subtree(child, alpha)
+
+
 func _on_units_swapped(hex_a: String, hex_b: String) -> void:
 	if phase != "shop":
 		return
@@ -253,11 +321,13 @@ func _on_units_swapped(hex_a: String, hex_b: String) -> void:
 func _on_combat_started() -> void:
 	phase = "combat"
 	_start_combat_camera()
-	# Drop the shop views — combat will spawn fresh uid-keyed ones.
+	# Drop the shop views AND the scouting previews — combat will spawn fresh
+	# uid-keyed ones for both sides.
 	for view in shop_views.values():
 		if is_instance_valid(view):
 			view.queue_free()
 	shop_views.clear()
+	_clear_preview_views()
 
 
 func _on_combat_ended(_player_won: bool) -> void:
@@ -410,6 +480,98 @@ func _on_unit_ability_cast(uid: int, _ability_name: String) -> void:
 		view.play_cast()
 		_spawn_cast_halo(view.global_position + Vector3(0, 0.05, 0), view.is_player)
 		add_camera_trauma(0.25)
+
+
+func _on_unit_merged_celebrate(unit_id: String, new_stars: int) -> void:
+	# Always emit the "★UP!" banner — works for both bench and board merges.
+	if phase == "shop":
+		EventBus.banner_requested.emit(
+			"★%d  %s  ★%d" % [new_stars, _display_name(unit_id), new_stars],
+			Color(1.0, 0.85, 0.30),
+		)
+	# Burst golden particles + pop IF the survivor is on the board. Bench-side
+	# merges get the banner only; the bench slot highlight is enough feedback.
+	if phase != "shop":
+		return
+	var target: Node3D = null
+	for view in shop_views.values():
+		if is_instance_valid(view) and view.unit_id == unit_id and view.stars == new_stars:
+			target = view
+			break
+	if target == null:
+		return
+	var burst_pos: Vector3 = target.global_position + Vector3(0, 0.7, 0)
+	_spawn_merge_burst(burst_pos, new_stars)
+	_popup_unit(target)
+	EventBus.star_up.emit(unit_id, new_stars, burst_pos)
+
+
+func _display_name(unit_id: String) -> String:
+	var data: Dictionary = GameData.units_data.get(unit_id, {})
+	return data.get("name", unit_id)
+
+
+func _popup_unit(view: Node3D) -> void:
+	# Quick squash-and-stretch that tweens the UnitView's scale. The unit view
+	# rebuilds scale from stretch each frame, so we tween the outer transform.
+	var tw := create_tween()
+	tw.tween_property(view, "scale", Vector3(1.3, 1.3, 1.3), 0.15)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(view, "scale", Vector3(1.0, 1.0, 1.0), 0.25)\
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _spawn_merge_burst(world_pos: Vector3, stars: int) -> void:
+	var p := CPUParticles3D.new()
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 0.14
+	p.direction = Vector3(0, 1, 0)
+	p.spread = 180.0
+	p.initial_velocity_min = 1.8
+	p.initial_velocity_max = 3.6
+	p.gravity = Vector3(0, -3.2, 0)
+	p.scale_amount_min = 0.10
+	p.scale_amount_max = 0.20
+	p.color = Color(1.0, 0.86, 0.30) if stars == 2 else Color(1.0, 0.55, 0.85)
+	var sm := SphereMesh.new()
+	sm.radius = 0.08
+	sm.height = 0.16
+	sm.radial_segments = 6
+	sm.rings = 3
+	p.mesh = sm
+	p.amount = 30 if stars == 2 else 50
+	p.lifetime = 1.1
+	p.one_shot = true
+	p.explosiveness = 1.0
+	p.position = world_pos
+	add_child(p)
+	p.restart()
+	get_tree().create_timer(2.0).timeout.connect(p.queue_free)
+
+	# A brief emissive star-shaped halo ring on the ground.
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.35
+	torus.outer_radius = 0.48
+	torus.rings = 32
+	torus.ring_segments = 8
+	ring.mesh = torus
+	var mat := StandardMaterial3D.new()
+	var ring_col := Color(1.0, 0.88, 0.30) if stars == 2 else Color(1.0, 0.55, 0.85)
+	mat.albedo_color = ring_col
+	mat.emission_enabled = true
+	mat.emission = ring_col
+	mat.emission_energy_multiplier = 5.5
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ring.material_override = mat
+	ring.position = Vector3(world_pos.x, 0.06, world_pos.z)
+	add_child(ring)
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(ring, "scale", Vector3(4.0, 1.0, 4.0), 0.75)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.75)
+	tw.chain().tween_callback(ring.queue_free)
 
 
 func _spawn_cast_halo(world_pos: Vector3, is_player: bool) -> void:

@@ -36,6 +36,10 @@ signal round_ended(round_num: int)
 signal game_over(placement: int)
 signal banner_requested(text: String, color: Color)
 
+# ─── Scouting / previews ────────────────────────────────────────────────────
+signal enemy_preview_ready(board: Dictionary)   # Before combat starts, showing upcoming foes
+signal star_up(unit_id: String, new_stars: int, world_pos: Vector3)  # Merge celebration
+
 # ─── Drag / UI ──────────────────────────────────────────────────────────────
 signal tooltip_requested(unit_data: Dictionary, screen_pos: Vector2)
 signal tooltip_hidden
