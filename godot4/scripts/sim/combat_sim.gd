@@ -77,13 +77,34 @@ func run_headless(player_board: Dictionary, enemy_board: Dictionary,
 #  ENEMY BOARD GENERATION
 # ═══════════════════════════════════════════════════════════════════════════
 
+const ENEMY_FACTIONS := [
+	"Alley", "Persian", "Siamese", "MaineCoon",
+	"Bengal", "Sphynx", "ScottishFold", "Ragdoll",
+]
+
 func generate_enemy_board(round_num: int) -> Dictionary:
 	var board: Dictionary = {}
 	var num_units := clampi(round_num + 1, 2, 8)
+	var level := clampi(round_num, 1, 8)
+
+	# Pick a faction theme so the AI board has at least one synergy active.
+	# Round-2+ commits to a primary faction; deeper rounds also splash a
+	# secondary so boards look like real player builds.
+	var primary: String = ENEMY_FACTIONS[randi() % ENEMY_FACTIONS.size()]
+	var secondary: String = ENEMY_FACTIONS[randi() % ENEMY_FACTIONS.size()]
+	var theme_chance: float = 0.0 if round_num <= 1 else 0.7
+	var splash_chance: float = 0.25 if round_num >= 4 else 0.0
 
 	for i in num_units:
-		var level := clampi(round_num, 1, 8)
-		var unit_id := GameData.roll_shop_unit(level)
+		var unit_id: String
+		var roll := randf()
+		if roll < theme_chance - splash_chance:
+			unit_id = GameData.roll_unit_in_faction(primary, level)
+		elif roll < theme_chance:
+			unit_id = GameData.roll_unit_in_faction(secondary, level)
+		else:
+			unit_id = GameData.roll_shop_unit(level)
+
 		var stars := 1
 		if round_num >= 4 and randf() < 0.3:
 			stars = 2
@@ -562,13 +583,27 @@ func _end_combat(player_won: bool) -> void:
 	combat_timer.stop()
 	GameState.combat_state = "idle"
 
+	# Streak update happens *before* income calc so the bonus for this round
+	# reflects the freshly extended streak (e.g. winning the 3rd in a row pays
+	# the +2 immediately, not next round).
 	if player_won:
-		var gold_reward := 5 + GameState.current_round
-		GameState.gold += gold_reward
-		var interest := mini(GameState.gold / 10, 5)
-		GameState.gold += interest
-		EventBus.banner_requested.emit("VICTORY! +%d gold" % (gold_reward + interest),
-			Color(0.3, 1, 0.5))
+		GameState.win_streak += 1
+		GameState.loss_streak = 0
+	else:
+		GameState.loss_streak += 1
+		GameState.win_streak = 0
+
+	var interest: int = GameState.get_interest_gold()
+	var streak_bonus: int = GameState.get_streak_bonus_gold()
+
+	if player_won:
+		var base_reward: int = 5 + GameState.current_round
+		var total: int = base_reward + interest + streak_bonus
+		GameState.gold += total
+		var msg := "VICTORY! +%d gold" % total
+		if streak_bonus > 0:
+			msg = "VICTORY! +%d (W%d streak +%d)" % [total, GameState.win_streak, streak_bonus]
+		EventBus.banner_requested.emit(msg, Color(0.3, 1, 0.5))
 	else:
 		var surviving := units.filter(func(u): return not u.is_player and u.hp > 0)
 		var damage := 0
@@ -577,9 +612,14 @@ func _end_combat(player_won: bool) -> void:
 			damage += udata.get("cost", 1)
 		damage = maxi(damage, 2)
 		GameState.health -= damage
-		GameState.gold += 3 + GameState.current_round
+		var base_reward: int = 3 + GameState.current_round
+		var total: int = base_reward + interest + streak_bonus
+		GameState.gold += total
 		EventBus.health_changed.emit(GameState.health)
-		EventBus.banner_requested.emit("DEFEAT! -%d HP" % damage, Color(1, 0.3, 0.3))
+		var msg := "DEFEAT! -%d HP" % damage
+		if streak_bonus > 0:
+			msg = "DEFEAT! -%d HP (L%d streak +%d)" % [damage, GameState.loss_streak, streak_bonus]
+		EventBus.banner_requested.emit(msg, Color(1, 0.3, 0.3))
 
 	GameState.player_board = GameState.pre_combat_board.duplicate(true)
 	GameState.enemy_board.clear()
@@ -589,6 +629,7 @@ func _end_combat(player_won: bool) -> void:
 	GameState.current_round += 1
 	EventBus.gold_changed.emit(GameState.gold)
 	EventBus.round_changed.emit(GameState.current_round)
+	EventBus.streak_changed.emit(GameState.win_streak, GameState.loss_streak)
 	GameState.roll_initial_shop()
 	EventBus.combat_ended.emit(player_won)
 

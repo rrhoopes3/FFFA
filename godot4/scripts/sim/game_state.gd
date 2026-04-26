@@ -20,6 +20,10 @@ var combat_state: String = "idle"         # idle | combat | resolution
 var combat_units: Array = []
 var active_combat_synergies: Dictionary = {}
 
+# ─── Streak (single-player economy) ─────────────────────────────────────────
+var win_streak: int = 0
+var loss_streak: int = 0
+
 # ─── Multiplayer (future) ───────────────────────────────────────────────────
 var mode: String = "single"
 var players: Array = []
@@ -51,6 +55,8 @@ func reset() -> void:
 	pre_combat_board = {}
 	combat_state = "idle"
 	combat_units = []
+	win_streak = 0
+	loss_streak = 0
 	mode = "single"
 	players = []
 
@@ -339,12 +345,53 @@ func _emit_synergies() -> void:
 
 
 ## Called by main scene on first launch — primes the shop and seeds the round.
+## Also called when the player restarts after game-over.
 func start_game() -> void:
 	reset()
 	roll_initial_shop()
+	EventBus.game_started.emit(mode)
 	EventBus.gold_changed.emit(gold)
 	EventBus.health_changed.emit(health)
 	EventBus.level_changed.emit(player_level)
 	EventBus.round_changed.emit(current_round)
+	EventBus.streak_changed.emit(win_streak, loss_streak)
 	EventBus.shop_refreshed.emit()
 	_emit_synergies()
+
+
+# ─── Economy helpers ────────────────────────────────────────────────────────
+
+## Interest income — 1g per 10g held, capped at 5. Mirrors TFT.
+func get_interest_gold() -> int:
+	return mini(gold / 10, 5)
+
+
+## Bonus gold from win/loss streak. Either streak counts; the longer it runs,
+## the bigger the kicker. Caps at +3 so loss-streaking is risky-but-survivable.
+func get_streak_bonus_gold() -> int:
+	var s: int = maxi(win_streak, loss_streak)
+	if s >= 5: return 3
+	if s >= 3: return 2
+	if s >= 2: return 1
+	return 0
+
+
+## Projected gold income on the next round-end (assuming the player neither
+## wins nor loses; the actual reward layers a base on top in combat_sim).
+func get_round_income_preview() -> int:
+	# Base shows the smaller of the two (loss=3+round, win=5+round). Use the
+	# loss case as a conservative floor so the HUD doesn't over-promise.
+	return 3 + current_round + get_interest_gold() + get_streak_bonus_gold()
+
+
+# ─── Stage label ────────────────────────────────────────────────────────────
+
+## TFT-style "1-3" round notation. Stage 1 is 3 rounds; subsequent stages 4
+## rounds each. Purely cosmetic — `current_round` is still the source of truth.
+func get_stage_label() -> String:
+	if current_round <= 3:
+		return "1-%d" % current_round
+	var rem := current_round - 3
+	var stage := 2 + (rem - 1) / 4
+	var sub := ((rem - 1) % 4) + 1
+	return "%d-%d" % [stage, sub]

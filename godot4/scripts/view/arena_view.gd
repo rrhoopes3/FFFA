@@ -18,6 +18,8 @@ const HexGrid = preload("res://scripts/view/hex_grid_3d.gd")
 @onready var hex_grid: Node3D = $HexGrid
 @onready var camera: Camera3D = $Camera3D
 
+var spectators_container: Node3D
+
 # Base camera framing (measured from the look-at point). During combat we
 # rotate this offset around CAMERA_LOOK_AT on the Y axis for a slow orbit,
 # and scale it slightly for a "punch in" dolly zoom.
@@ -56,6 +58,8 @@ func _ready() -> void:
 	if island:
 		_enable_vertex_colors(island)
 
+	_build_spectators()
+
 	hex_grid.hex_clicked.connect(_on_hex_clicked)
 
 	# Shop signals
@@ -73,6 +77,18 @@ func _ready() -> void:
 	EventBus.unit_moved.connect(_on_unit_moved)
 	EventBus.unit_ability_cast.connect(_on_unit_ability_cast)
 
+	# Game flow — restart wipes the shop view so the cleared board re-renders.
+	EventBus.game_started.connect(_on_game_started)
+
+
+func _on_game_started(_mode: String) -> void:
+	phase = "shop"
+	for view in combat_views.values():
+		if is_instance_valid(view):
+			view.queue_free()
+	combat_views.clear()
+	rebuild_shop_view()
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  CAMERA RIG — slow orbit + dolly punch during combat
@@ -84,6 +100,7 @@ func _process(delta: float) -> void:
 	if shake_strength > 0.0:
 		shake_strength = maxf(0.0, shake_strength - SHAKE_DECAY * delta)
 	_apply_camera_transform()
+	_tick_spectators()
 
 
 func _enable_vertex_colors(node: Node) -> void:
@@ -290,7 +307,7 @@ func _on_combat_unit_spawned(uid: int, unit_id: String, hex_key: String,
 	combat_views[uid] = view
 
 
-func _on_unit_attacked(attacker_uid: int, target_uid: int, _damage: int, is_crit: bool) -> void:
+func _on_unit_attacked(attacker_uid: int, target_uid: int, damage: int, is_crit: bool) -> void:
 	var attacker = combat_views.get(attacker_uid, null)
 	var target = combat_views.get(target_uid, null)
 	if attacker and target:
@@ -302,6 +319,7 @@ func _on_unit_attacked(attacker_uid: int, target_uid: int, _damage: int, is_crit
 		if away.length() > 0.001:
 			target.pending_hurt_dir = away.normalized()
 		_spawn_hit_spark(target.global_position + Vector3(0, 0.6, 0), is_crit)
+		_spawn_damage_number(target.global_position + Vector3(0, 1.1, 0), damage, is_crit)
 		# Crit hits trigger camera trauma + a brief hit-pause for impact feel.
 		# Non-crits get a tiny tap of trauma.
 		if is_crit:
@@ -446,3 +464,146 @@ func _spawn_cast_halo(world_pos: Vector3, is_player: bool) -> void:
 
 func _on_hex_clicked(hex_key: String) -> void:
 	arena_hex_clicked.emit(hex_key)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  FLOATING DAMAGE NUMBERS
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _spawn_damage_number(world_pos: Vector3, amount: int, is_crit: bool) -> void:
+	var lbl := Label3D.new()
+	lbl.text = ("%d!" % amount) if is_crit else str(amount)
+	lbl.font_size = 96 if is_crit else 72
+	lbl.outline_size = 14
+	var tint: Color = Color(1.0, 0.85, 0.20) if is_crit else Color(1.0, 0.98, 0.95)
+	lbl.modulate = tint
+	lbl.outline_modulate = Color(0, 0, 0, 0.92)
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.fixed_size = true
+	lbl.pixel_size = 0.0045 if is_crit else 0.0033
+	lbl.no_depth_test = true
+	# Jitter the start position so sequential hits don't stack on one pixel.
+	var jitter := Vector3(randf_range(-0.22, 0.22), 0.0, randf_range(-0.22, 0.22))
+	lbl.position = world_pos + jitter
+	add_child(lbl)
+	var end_pos := lbl.position + Vector3(randf_range(-0.3, 0.3), 1.45, randf_range(-0.3, 0.3))
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(lbl, "position", end_pos, 0.85)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(lbl, "modulate:a", 0.0, 0.55).set_delay(0.35)
+	# Pop-in scale pulse — separate non-parallel chain so it sequences cleanly.
+	var pop := create_tween()
+	pop.tween_property(lbl, "scale", Vector3(1.35, 1.35, 1.35), 0.10)\
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	pop.tween_property(lbl, "scale", Vector3.ONE, 0.12)
+	get_tree().create_timer(1.1).timeout.connect(lbl.queue_free)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  SPECTATOR CROWD — small cat silhouettes ringing the arena
+# ═══════════════════════════════════════════════════════════════════════════
+
+const SPECTATOR_COUNT := 28
+const SPECTATOR_RADIUS_MIN := 7.3
+const SPECTATOR_RADIUS_MAX := 10.2
+const SPECTATOR_BOB_AMP := 0.09
+const SPECTATOR_BOB_SPEED := 2.1
+
+func _build_spectators() -> void:
+	spectators_container = Node3D.new()
+	spectators_container.name = "Spectators"
+	add_child(spectators_container)
+
+	# Deterministic so the crowd is stable across reloads — debugging is
+	# miserable when a cosmetic ring shifts every run.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 0xCA75_BEEF
+
+	var fur_palette := [
+		Color(0.95, 0.93, 0.87),  # cream
+		Color(0.82, 0.68, 0.48),  # tan
+		Color(0.25, 0.22, 0.20),  # black
+		Color(0.60, 0.45, 0.35),  # brown
+		Color(0.90, 0.88, 0.85),  # white
+		Color(0.38, 0.32, 0.28),  # dark brown
+		Color(0.72, 0.56, 0.40),  # ginger
+		Color(0.52, 0.50, 0.48),  # grey
+	]
+
+	for i in SPECTATOR_COUNT:
+		var angle := (float(i) / SPECTATOR_COUNT) * TAU + rng.randf_range(-0.05, 0.05)
+		var radius := rng.randf_range(SPECTATOR_RADIUS_MIN, SPECTATOR_RADIUS_MAX)
+		var x := cos(angle) * radius
+		var z := sin(angle) * radius
+		# Keep out of the pillar footprints at (±5, ±3).
+		if absf(absf(x) - 5.0) < 0.55 and absf(absf(z) - 3.0) < 0.55:
+			continue
+		var spec := _make_spectator(fur_palette[rng.randi() % fur_palette.size()])
+		spec.position = Vector3(x, 0.0, z)
+		# Face the arena center so they're "watching".
+		spec.rotation.y = atan2(-x, -z)
+		spec.set_meta("bob_phase", rng.randf_range(0.0, TAU))
+		spec.set_meta("base_y", 0.0)
+		spectators_container.add_child(spec)
+
+
+func _make_spectator(fur: Color) -> Node3D:
+	var root := Node3D.new()
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = fur
+	mat.roughness = 0.85
+	mat.metallic = 0.0
+
+	var body := MeshInstance3D.new()
+	var body_mesh := CapsuleMesh.new()
+	body_mesh.radius = 0.20
+	body_mesh.height = 0.48
+	body.mesh = body_mesh
+	body.material_override = mat
+	body.position = Vector3(0, 0.24, 0)
+	root.add_child(body)
+
+	var head := MeshInstance3D.new()
+	var head_mesh := SphereMesh.new()
+	head_mesh.radius = 0.16
+	head_mesh.height = 0.32
+	head.mesh = head_mesh
+	head.material_override = mat
+	head.position = Vector3(0, 0.62, 0)
+	root.add_child(head)
+
+	for side in [-1.0, 1.0]:
+		var ear := MeshInstance3D.new()
+		var ear_mesh := CylinderMesh.new()
+		ear_mesh.top_radius = 0.001
+		ear_mesh.bottom_radius = 0.055
+		ear_mesh.height = 0.11
+		ear_mesh.radial_segments = 6
+		ear.mesh = ear_mesh
+		ear.material_override = mat
+		ear.position = Vector3(side * 0.095, 0.77, 0.01)
+		root.add_child(ear)
+
+	# Tiny tail curl behind the body so silhouettes read as cats from any angle.
+	var tail := MeshInstance3D.new()
+	var tail_mesh := CapsuleMesh.new()
+	tail_mesh.radius = 0.04
+	tail_mesh.height = 0.28
+	tail.mesh = tail_mesh
+	tail.material_override = mat
+	tail.position = Vector3(0, 0.22, -0.18)
+	tail.rotation = Vector3(deg_to_rad(-30.0), 0, 0)
+	root.add_child(tail)
+
+	return root
+
+
+func _tick_spectators() -> void:
+	if spectators_container == null:
+		return
+	var t_now := Time.get_ticks_msec() / 1000.0
+	var excitement := 1.6 if phase == "combat" else 1.0
+	for spec in spectators_container.get_children():
+		var phase_off: float = spec.get_meta("bob_phase", 0.0)
+		var y := maxf(0.0, sin(t_now * SPECTATOR_BOB_SPEED * excitement + phase_off)) * SPECTATOR_BOB_AMP * excitement
+		spec.position.y = y

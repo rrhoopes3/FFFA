@@ -81,6 +81,7 @@ func setup(p_uid: int, p_unit_id: String, p_hex: String, p_is_player: bool,
 	_load_mesh()
 	_build_team_disc()
 	_build_hp_bar()
+	_build_star_pips()
 	_snap_to_hex()
 	# Face the opposing team. Enemies look at -Z; players look at +Z.
 	base_yaw = PI if not is_player else 0.0
@@ -201,6 +202,24 @@ func _build_hp_bar() -> void:
 	hp_bar_fill.material_override = fill_mat
 	hp_bar_fill.position = Vector3(0, 1.0, -0.001)
 	add_child(hp_bar_fill)
+
+
+func _build_star_pips() -> void:
+	if stars <= 1:
+		return
+	var label := Label3D.new()
+	label.name = "StarPips"
+	label.text = "★".repeat(stars)
+	label.font_size = 96
+	label.outline_size = 12
+	var col := Color(1.0, 0.85, 0.25) if stars == 2 else Color(1.0, 0.45, 0.95)
+	label.modulate = col
+	label.outline_modulate = Color(0, 0, 0, 0.92)
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.fixed_size = true
+	label.pixel_size = 0.0025
+	label.position = Vector3(0, 1.22, 0)
+	add_child(label)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

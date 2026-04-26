@@ -394,6 +394,37 @@ func roll_shop_unit(level: int) -> String:
 	return tier_units[randi() % tier_units.size()]
 
 
+## Roll a unit constrained to a faction. Tier is picked with the same level
+## odds as `roll_shop_unit`, but only units of the requested faction are
+## considered. Falls back to any-tier-in-faction, then to the unconstrained
+## roll if the faction is somehow empty (shouldn't happen with the canonical
+## 48-unit roster).
+func roll_unit_in_faction(faction: String, level: int) -> String:
+	var clamped_level := clampi(level, 1, 8)
+	var odds: Array = shop_odds[clamped_level]
+	var roll := randf() * 100.0
+	var cumulative := 0.0
+	var tier := 1
+	for i in range(odds.size()):
+		cumulative += odds[i]
+		if roll < cumulative:
+			tier = i + 1
+			break
+	var faction_tier_units: Array = []
+	for unit_id in units_by_tier.get(tier, []):
+		if units_data[unit_id].get("faction", "") == faction:
+			faction_tier_units.append(unit_id)
+	if not faction_tier_units.is_empty():
+		return faction_tier_units[randi() % faction_tier_units.size()]
+	var any_tier_units: Array = []
+	for unit_id in units_data:
+		if units_data[unit_id].get("faction", "") == faction:
+			any_tier_units.append(unit_id)
+	if not any_tier_units.is_empty():
+		return any_tier_units[randi() % any_tier_units.size()]
+	return roll_shop_unit(level)
+
+
 ## Sell value scales with star level.
 func get_sell_value(cost: int, stars: int) -> int:
 	if stars == 3:

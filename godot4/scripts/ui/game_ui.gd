@@ -50,6 +50,9 @@ var hud_gold_label: Label
 var hud_health_label: Label
 var hud_level_label: Label
 var hud_round_label: Label
+var hud_income_label: Label
+var hud_streak_label: Label
+var hud_streak_chip: Control    # parent of hud_streak_label, hidden when no streak
 var levelup_button: Button
 var reroll_button: Button
 var fight_button: Button
@@ -60,6 +63,9 @@ var synergy_list: VBoxContainer
 var status_label: Label
 var drop_catcher: Control       # Fullscreen, mouse-pass, accepts drops over 3D
 var banner_label: Label         # Big centered overlay — FIGHT / VICTORY / DEFEAT
+var game_over_overlay: Control  # Restart screen shown on health <= 0
+var game_over_subtitle: Label
+var game_ended: bool = false    # Locks input until the player clicks Play Again
 
 
 func _ready() -> void:
@@ -72,6 +78,7 @@ func _ready() -> void:
 	EventBus.health_changed.connect(_refresh_hud)
 	EventBus.level_changed.connect(_refresh_hud)
 	EventBus.round_changed.connect(_refresh_hud)
+	EventBus.streak_changed.connect(_on_streak_changed)
 	EventBus.shop_refreshed.connect(_refresh_shop)
 	EventBus.unit_bought.connect(_on_unit_bought)
 	EventBus.unit_sold.connect(_on_unit_sold_signal)
@@ -82,6 +89,8 @@ func _ready() -> void:
 	EventBus.combat_started.connect(_on_combat_started)
 	EventBus.combat_ended.connect(_on_combat_ended)
 	EventBus.banner_requested.connect(_show_banner)
+	EventBus.game_over.connect(_on_game_over)
+	EventBus.game_started.connect(_on_game_started)
 
 	# Hook up the arena's hex click → return-to-bench.
 	if arena_view == null:
@@ -184,6 +193,7 @@ func _build_ui() -> void:
 	_build_action_buttons()
 	_build_status_line()
 	_build_banner()
+	_build_game_over_overlay()
 
 
 func _styled_panel(bg: Color, border: Color = Color(0, 0, 0, 0)) -> StyleBoxFlat:
@@ -215,10 +225,15 @@ func _build_hud_bar() -> void:
 	bar.add_child(hbox)
 
 	hud_gold_label = _hud_chip("GOLD", "50", Color("#FFD166"))
+	hud_income_label = _hud_chip("INCOME", "+0", Color("#FBBF24"))
 	hud_health_label = _hud_chip("HP", "100", Color("#EF476F"))
 	hud_level_label = _hud_chip("LVL", "1", Color("#06D6A0"))
-	hud_round_label = _hud_chip("ROUND", "1", Color("#118AB2"))
-	for chip in [hud_gold_label, hud_health_label, hud_level_label, hud_round_label]:
+	hud_round_label = _hud_chip("STAGE", "1-1", Color("#118AB2"))
+	hud_streak_label = _hud_chip("STREAK", "—", Color("#94A3B8"))
+	hud_streak_chip = hud_streak_label.get_parent()
+	hud_streak_chip.visible = false
+	for chip in [hud_gold_label, hud_income_label, hud_health_label,
+			hud_level_label, hud_round_label, hud_streak_label]:
 		hbox.add_child(chip.get_parent())
 
 
@@ -275,8 +290,8 @@ func _build_bench_row() -> void:
 	var bench_w := BENCH_SIZE * (SLOT_W + 6) + 12
 	bar.offset_left = -bench_w * 0.5
 	bar.offset_right = bench_w * 0.5
-	bar.offset_top = -260
-	bar.offset_bottom = -156
+	bar.offset_top = -292
+	bar.offset_bottom = -188
 	add_child(bar)
 
 	var hbox := HBoxContainer.new()
@@ -321,9 +336,9 @@ func _build_sell_zone() -> void:
 	sell_zone.anchor_right = 1.0
 	sell_zone.anchor_bottom = 1.0
 	sell_zone.offset_left = -200
-	sell_zone.offset_top = -260
+	sell_zone.offset_top = -292
 	sell_zone.offset_right = -16
-	sell_zone.offset_bottom = -156
+	sell_zone.offset_bottom = -188
 	sell_zone.set_script(_make_sell_zone_script())
 	sell_zone.set_meta("ui", self)
 	add_child(sell_zone)
@@ -415,6 +430,115 @@ func _show_banner(text: String, color: Color) -> void:
 	tw.tween_property(banner_label, "modulate:a", 0.0, 0.55)
 
 
+func _build_game_over_overlay() -> void:
+	# Fullscreen modal that eats input until the player restarts. Hidden until
+	# EventBus.game_over fires; revealed with a quick scale-in via _on_game_over.
+	game_over_overlay = Control.new()
+	game_over_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	game_over_overlay.anchor_right = 1.0
+	game_over_overlay.anchor_bottom = 1.0
+	game_over_overlay.visible = false
+	add_child(game_over_overlay)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.62)
+	dim.anchor_right = 1.0
+	dim.anchor_bottom = 1.0
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	game_over_overlay.add_child(dim)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel",
+		_styled_panel(Color(0.06, 0.07, 0.12, 0.96), Color("#EF4444", 0.85)))
+	panel.anchor_left = 0.5
+	panel.anchor_top = 0.5
+	panel.anchor_right = 0.5
+	panel.anchor_bottom = 0.5
+	panel.offset_left = -240
+	panel.offset_top = -150
+	panel.offset_right = 240
+	panel.offset_bottom = 150
+	game_over_overlay.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "GAME OVER"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 56)
+	title.add_theme_color_override("font_color", Color("#FCA5A5"))
+	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	title.add_theme_constant_override("outline_size", 6)
+	vbox.add_child(title)
+
+	game_over_subtitle = Label.new()
+	game_over_subtitle.text = ""
+	game_over_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	game_over_subtitle.add_theme_font_size_override("font_size", 18)
+	game_over_subtitle.add_theme_color_override("font_color", Color("#E5E7EB"))
+	vbox.add_child(game_over_subtitle)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 12)
+	vbox.add_child(spacer)
+
+	var play_again := Button.new()
+	play_again.text = "▶  PLAY AGAIN"
+	play_again.custom_minimum_size = Vector2(220, 44)
+	play_again.add_theme_font_size_override("font_size", 18)
+	play_again.pressed.connect(_on_play_again_pressed)
+	# Center the button under the subtitle.
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_row.add_child(play_again)
+	vbox.add_child(btn_row)
+
+
+func _on_game_over(_placement: int) -> void:
+	game_ended = true
+	if game_over_overlay == null:
+		return
+	game_over_subtitle.text = "Reached Stage %s · Level %d" % [
+		GameState.get_stage_label(), GameState.player_level]
+	game_over_overlay.visible = true
+	game_over_overlay.modulate.a = 0.0
+	var tw := create_tween()
+	tw.tween_interval(0.35)  # let the DEFEAT banner read first
+	tw.tween_property(game_over_overlay, "modulate:a", 1.0, 0.45)
+	# Lock interactive controls behind the modal as a safety net even though
+	# the overlay's STOP filter already eats clicks.
+	if fight_button: fight_button.disabled = true
+	if reroll_button: reroll_button.disabled = true
+	if levelup_button: levelup_button.disabled = true
+	for c in shop_cards: c.disabled = true
+
+
+func _on_play_again_pressed() -> void:
+	if game_over_overlay:
+		game_over_overlay.visible = false
+	game_ended = false
+	GameState.start_game()
+
+
+func _on_game_started(_mode: String) -> void:
+	# Reset transient banner / status text so a fresh run starts clean.
+	if banner_label:
+		banner_label.modulate.a = 0.0
+	if status_label:
+		status_label.text = ""
+	if hud_streak_chip:
+		hud_streak_chip.visible = false
+	if fight_button: fight_button.disabled = false
+	if reroll_button: reroll_button.disabled = false
+	_refresh_hud()
+	_refresh_shop()
+	_refresh_bench()
+	_refresh_synergies()
+
+
 func _build_status_line() -> void:
 	status_label = Label.new()
 	status_label.anchor_left = 0.0
@@ -454,20 +578,27 @@ func _make_bench_slot(index: int) -> Control:
 	slot.set_meta("ui", self)
 	slot.set_meta("index", index)
 
+	# Portrait image — fills top portion of the slot
+	var portrait := TextureRect.new()
+	portrait.name = "Portrait"
+	portrait.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait.position = Vector2(6, 4)
+	portrait.size = Vector2(SLOT_W - 12, 50)
+	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	slot.add_child(portrait)
+
 	var name_label := Label.new()
 	name_label.name = "NameLabel"
 	name_label.text = ""
-	name_label.add_theme_font_size_override("font_size", 11)
+	name_label.add_theme_font_size_override("font_size", 10)
 	name_label.add_theme_color_override("font_color", Color("#F8FAFC"))
-	name_label.anchor_right = 1.0
-	name_label.anchor_bottom = 1.0
-	name_label.offset_left = 4
-	name_label.offset_top = 4
-	name_label.offset_right = -4
-	name_label.offset_bottom = -4
+	name_label.position = Vector2(4, 56)
+	name_label.size = Vector2(SLOT_W - 8, 36)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot.add_child(name_label)
 
 	var star_label := Label.new()
@@ -475,11 +606,9 @@ func _make_bench_slot(index: int) -> Control:
 	star_label.text = ""
 	star_label.add_theme_font_size_override("font_size", 14)
 	star_label.add_theme_color_override("font_color", Color("#FBBF24"))
-	star_label.anchor_left = 1.0
-	star_label.anchor_right = 1.0
-	star_label.offset_left = -22
-	star_label.offset_top = 2
-	star_label.offset_right = -2
+	star_label.position = Vector2(SLOT_W - 22, 2)
+	star_label.size = Vector2(20, 16)
+	star_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot.add_child(star_label)
 
 	return slot
@@ -527,9 +656,10 @@ func _make_shop_card(index: int) -> Button:
 
 func _refresh_hud(_v = null) -> void:
 	if hud_gold_label: hud_gold_label.text = str(GameState.gold)
+	if hud_income_label: hud_income_label.text = "+%d" % GameState.get_round_income_preview()
 	if hud_health_label: hud_health_label.text = str(GameState.health)
 	if hud_level_label: hud_level_label.text = str(GameState.player_level)
-	if hud_round_label: hud_round_label.text = str(GameState.current_round)
+	if hud_round_label: hud_round_label.text = GameState.get_stage_label()
 	if levelup_button:
 		var cost := GameState.get_level_up_cost()
 		if cost < 0:
@@ -538,6 +668,23 @@ func _refresh_hud(_v = null) -> void:
 		else:
 			levelup_button.text = "LEVEL UP (%dg)" % cost
 			levelup_button.disabled = GameState.gold < cost
+
+
+func _on_streak_changed(win_streak: int, loss_streak: int) -> void:
+	if hud_streak_label == null or hud_streak_chip == null:
+		return
+	if win_streak >= 2:
+		hud_streak_label.text = "W%d" % win_streak
+		hud_streak_label.add_theme_color_override("font_color", Color("#34D399"))
+		hud_streak_chip.visible = true
+	elif loss_streak >= 2:
+		hud_streak_label.text = "L%d" % loss_streak
+		hud_streak_label.add_theme_color_override("font_color", Color("#F87171"))
+		hud_streak_chip.visible = true
+	else:
+		hud_streak_chip.visible = false
+	# Streak changes the income preview, so reflect that in the gold chip too.
+	_refresh_hud()
 
 
 func _refresh_shop() -> void:
@@ -595,14 +742,21 @@ func _refresh_bench() -> void:
 	for i in BENCH_SIZE:
 		var slot: Control = bench_slots[i]
 		var u = GameState.bench[i]
+		var portrait: TextureRect = slot.get_node("Portrait")
 		var name_label: Label = slot.get_node("NameLabel")
 		var star_label: Label = slot.get_node("StarLabel")
 		if u == null:
+			portrait.texture = null
 			name_label.text = ""
 			star_label.text = ""
 			slot.add_theme_stylebox_override("panel", _styled_panel(Color(0.12, 0.14, 0.20, 0.95), Color("#475569")))
 		else:
 			var data: Dictionary = GameData.units_data.get(u.id, {})
+			var path := "res://art/portraits/%s.png" % u.id
+			if ResourceLoader.exists(path):
+				portrait.texture = load(path)
+			else:
+				portrait.texture = null
 			name_label.text = data.get("name", u.id)
 			star_label.text = "★".repeat(int(u.stars))
 			var faction: String = data.get("faction", "")
@@ -730,7 +884,8 @@ func _on_fight_pressed() -> void:
 	if GameState.combat_state != "idle":
 		return
 	if GameState.player_board.is_empty():
-		_set_status("place at least one unit before fighting")
+		EventBus.banner_requested.emit("PLACE UNITS FIRST!", Color(1, 0.8, 0.2))
+		_set_status("drag units from bench onto the arena hexes, then fight")
 		return
 	CombatSim.start_combat()
 
@@ -760,16 +915,22 @@ func make_bench_drag_preview(bench_index: int) -> Control:
 	var bg := COST_COLORS.get(cost, Color("#475569")) as Color
 	bg.a = 0.85
 	preview.add_theme_stylebox_override("panel", _styled_panel(bg, border))
+	var portrait := TextureRect.new()
+	portrait.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait.position = Vector2(6, 4)
+	portrait.size = Vector2(SLOT_W - 12, 50)
+	portrait.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var path := "res://art/portraits/%s.png" % u.id
+	if ResourceLoader.exists(path):
+		portrait.texture = load(path)
+	preview.add_child(portrait)
 	var lbl := Label.new()
 	lbl.text = data.get("name", u.id)
-	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_font_size_override("font_size", 10)
 	lbl.add_theme_color_override("font_color", Color("#F8FAFC"))
-	lbl.anchor_right = 1.0
-	lbl.anchor_bottom = 1.0
-	lbl.offset_left = 4
-	lbl.offset_right = -4
-	lbl.offset_top = 4
-	lbl.offset_bottom = -4
+	lbl.position = Vector2(4, 56)
+	lbl.size = Vector2(SLOT_W - 8, 36)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD

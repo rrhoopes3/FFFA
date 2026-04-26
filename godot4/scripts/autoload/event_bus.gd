@@ -28,6 +28,7 @@ signal health_changed(new_health: int)
 signal level_changed(new_level: int)
 signal round_changed(new_round: int)
 signal synergies_updated(synergy_data: Dictionary)
+signal streak_changed(win_streak: int, loss_streak: int)
 
 # ─── Game flow ──────────────────────────────────────────────────────────────
 signal game_started(mode: String)
