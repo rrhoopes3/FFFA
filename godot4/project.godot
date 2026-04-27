@@ -7,8 +7,8 @@ config_version=5
 
 config/name="FFFA - Feline Free-Fur-All"
 config/description="3D auto-battler. Cats. War."
-config/version="3.6.0"
-run/main_scene="res://scenes/main.tscn"
+config/version="3.7.0"
+run/main_scene="res://scenes/main_menu.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
 config/icon="res://icon.svg"
 
@@ -19,6 +19,7 @@ GameData="*res://scripts/sim/game_data.gd"
 GameState="*res://scripts/sim/game_state.gd"
 CombatSim="*res://scripts/sim/combat_sim.gd"
 AudioManager="*res://scripts/autoload/audio_manager.gd"
+NetworkManager="*res://scripts/net/network_manager.gd"
 
 [display]
 

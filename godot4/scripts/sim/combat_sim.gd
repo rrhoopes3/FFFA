@@ -28,7 +28,7 @@ func _ready() -> void:
 # ═══════════════════════════════════════════════════════════════════════════
 
 ## Start combat from the current GameState boards.
-## Builds an enemy board if none exists yet.
+## Builds an enemy board if none exists yet (single-player fallback).
 func start_combat() -> void:
 	if GameState.combat_state != "idle":
 		return
@@ -43,12 +43,24 @@ func start_combat() -> void:
 	GameState.combat_state = "combat"
 	tick_count = 0
 	EventBus.combat_started.emit()
-	EventBus.banner_requested.emit("FIGHT!", Color(1, 0.3, 0.3))
+	var who: String = GameState.mp_opponent_name if GameState.is_multiplayer_round else ""
+	var fight_text: String = "FIGHT! vs %s" % who if who != "" else "FIGHT!"
+	EventBus.banner_requested.emit(fight_text, Color(1, 0.3, 0.3))
 
 	_spawn_units(GameState.player_board, GameState.enemy_board)
 	_pounce_melee_units(true)
 
 	combat_timer.start()
+
+
+## Multiplayer entry point — opponent's board is supplied by the server.
+## Skips economy mutation in `_end_combat`; the authoritative result is
+## delivered separately via NetworkManager.round_result_rpc.
+func start_combat_against(opponent_board: Dictionary, opponent_name: String) -> void:
+	GameState.is_multiplayer_round = true
+	GameState.mp_opponent_name = opponent_name
+	GameState.enemy_board = opponent_board.duplicate(true)
+	start_combat()
 
 
 ## Run a hardcoded fight headlessly (used by sim_test scene).
@@ -582,6 +594,18 @@ func _allies(unit: Dictionary) -> Array:
 func _end_combat(player_won: bool) -> void:
 	combat_timer.stop()
 	GameState.combat_state = "idle"
+
+	# Multiplayer: the server already computed the canonical result and will
+	# push it via round_result_rpc. We only restore the player's pre-combat
+	# board and tear down combat views — gold/HP/streak come from the wire.
+	if GameState.is_multiplayer_round:
+		GameState.player_board = GameState.pre_combat_board.duplicate(true)
+		GameState.enemy_board.clear()
+		GameState.combat_units.clear()
+		units.clear()
+		GameState.is_multiplayer_round = false
+		EventBus.combat_ended.emit(player_won)
+		return
 
 	# Streak update happens *before* income calc so the bonus for this round
 	# reflects the freshly extended streak (e.g. winning the 3rd in a row pays

@@ -24,10 +24,14 @@ var active_combat_synergies: Dictionary = {}
 var win_streak: int = 0
 var loss_streak: int = 0
 
-# ─── Multiplayer (future) ───────────────────────────────────────────────────
-var mode: String = "single"
+# ─── Multiplayer ────────────────────────────────────────────────────────────
+var mode: String = "single"                # "single" | "multiplayer"
 var players: Array = []
 var human_index: int = 0
+var is_multiplayer_round: bool = false     # set by combat_sim.start_combat_against
+var mp_opponent_name: String = ""
+var mp_pending_result: Dictionary = {}     # populated by RPC, applied on combat_ended
+var mp_roster: Array = []                  # last roster snapshot from server
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 const LEVEL_COSTS := [0, 5, 10, 20, 36, 56, 80, 100]
@@ -38,6 +42,23 @@ const SHOP_SIZE := 5
 
 func _ready() -> void:
 	reset()
+	# Multiplayer banner is delayed until the local cinematic finishes so the
+	# HP-loss text doesn't spoil the fight.
+	EventBus.combat_ended.connect(_on_combat_ended_for_mp_banner)
+
+
+func _on_combat_ended_for_mp_banner(_player_won: bool) -> void:
+	if mp_pending_result.is_empty():
+		return
+	var won: bool = mp_pending_result.get("won", false)
+	var dmg: int = int(mp_pending_result.get("damage", 0))
+	if won:
+		EventBus.banner_requested.emit(
+			"VICTORY! vs %s" % mp_opponent_name, Color(0.3, 1, 0.5))
+	else:
+		EventBus.banner_requested.emit(
+			"DEFEAT! -%d HP" % dmg, Color(1, 0.3, 0.3))
+	mp_pending_result = {}
 
 
 func reset() -> void:
@@ -395,3 +416,62 @@ func get_stage_label() -> String:
 	var stage := 2 + (rem - 1) / 4
 	var sub := ((rem - 1) % 4) + 1
 	return "%d-%d" % [stage, sub]
+
+
+# ─── Multiplayer client handlers ────────────────────────────────────────────
+# Called by NetworkManager RPC stubs. The server is authoritative, so these
+# largely just mutate local mirrors and emit signals for the UI to react.
+
+func on_remote_placement_phase(round_num: int, server_gold: int) -> void:
+	# Round 1 is the "game has started" signal in multiplayer — initialize
+	# locally same as `start_game()` would for single-player, but keep mode.
+	if round_num == 1 and mode != "multiplayer":
+		reset()
+	mode = "multiplayer"
+	current_round = round_num
+	gold = server_gold
+	roll_initial_shop()
+	EventBus.gold_changed.emit(gold)
+	EventBus.health_changed.emit(health)
+	EventBus.level_changed.emit(player_level)
+	EventBus.round_changed.emit(current_round)
+	EventBus.streak_changed.emit(win_streak, loss_streak)
+	EventBus.shop_refreshed.emit()
+	if round_num == 1:
+		EventBus.game_started.emit(mode)
+
+
+func on_remote_round_start(round_num: int, opponent_name: String,
+		opponent_board: Dictionary, _combat_seed: int) -> void:
+	current_round = round_num
+	mp_opponent_name = opponent_name
+	# Trigger the local cinematic. server-authoritative result lands separately.
+	CombatSim.start_combat_against(opponent_board, opponent_name)
+
+
+func on_remote_round_result(player_won: bool, damage_taken: int, new_hp: int) -> void:
+	health = new_hp
+	if player_won:
+		win_streak += 1
+		loss_streak = 0
+	else:
+		loss_streak += 1
+		win_streak = 0
+	EventBus.health_changed.emit(health)
+	EventBus.streak_changed.emit(win_streak, loss_streak)
+	# Stash for the banner; the local cinematic will trigger it on its
+	# own combat_ended via _on_combat_ended_for_mp_banner.
+	mp_pending_result = {
+		"won": player_won,
+		"damage": damage_taken,
+		"hp": new_hp,
+	}
+
+
+func on_remote_game_over(placement: int, _winner_name: String) -> void:
+	EventBus.game_over.emit(placement)
+
+
+func on_remote_roster(roster: Array) -> void:
+	mp_roster = roster
+	EventBus.mp_roster_updated.emit(roster)

@@ -66,6 +66,8 @@ var banner_label: Label         # Big centered overlay — FIGHT / VICTORY / DEF
 var game_over_overlay: Control  # Restart screen shown on health <= 0
 var game_over_subtitle: Label
 var game_ended: bool = false    # Locks input until the player clicks Play Again
+var roster_panel: PanelContainer
+var roster_list: VBoxContainer
 
 
 func _ready() -> void:
@@ -98,7 +100,17 @@ func _ready() -> void:
 	if arena_view and arena_view.has_signal("arena_hex_clicked"):
 		arena_view.arena_hex_clicked.connect(_on_arena_hex_clicked)
 
-	GameState.start_game()
+	EventBus.mp_roster_updated.connect(_on_mp_roster_updated)
+	EventBus.round_changed.connect(_on_round_changed_mp_check)
+
+	# Single-player kicks the local game off immediately. Multiplayer waits
+	# for the server to send placement_phase_rpc before doing anything.
+	if GameState.mode == "multiplayer":
+		_set_status("Connected — waiting for round 1…")
+		if fight_button:
+			fight_button.text = "READY"
+	else:
+		GameState.start_game()
 
 	# Visual validation hook (opt-in via env var). FFFA_SHOTS=1 captures a
 	# static shop screenshot. FFFA_SHOTS=2 also runs an autotest that buys,
@@ -194,6 +206,7 @@ func _build_ui() -> void:
 	_build_status_line()
 	_build_banner()
 	_build_game_over_overlay()
+	_build_roster_panel()
 
 
 func _styled_panel(bg: Color, border: Color = Color(0, 0, 0, 0)) -> StyleBoxFlat:
@@ -539,6 +552,96 @@ func _on_game_started(_mode: String) -> void:
 	_refresh_synergies()
 
 
+func _build_roster_panel() -> void:
+	# Right-edge column of 8 player cards. Hidden in single-player.
+	roster_panel = PanelContainer.new()
+	roster_panel.add_theme_stylebox_override("panel",
+		_styled_panel(Color(0.06, 0.07, 0.12, 0.78)))
+	roster_panel.anchor_left = 1.0
+	roster_panel.anchor_right = 1.0
+	roster_panel.anchor_top = 0.0
+	roster_panel.anchor_bottom = 1.0
+	roster_panel.offset_left = -200
+	roster_panel.offset_top = 64
+	roster_panel.offset_right = -12
+	roster_panel.offset_bottom = -300
+	roster_panel.visible = (GameState.mode == "multiplayer")
+	add_child(roster_panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	roster_panel.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "LOBBY"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color("#FBBF24"))
+	vbox.add_child(title)
+
+	roster_list = VBoxContainer.new()
+	roster_list.add_theme_constant_override("separation", 3)
+	vbox.add_child(roster_list)
+
+
+func _refresh_roster(roster: Array) -> void:
+	if roster_panel == null or roster_list == null:
+		return
+	roster_panel.visible = true
+	for child in roster_list.get_children():
+		child.queue_free()
+	for entry in roster:
+		var entry_box := PanelContainer.new()
+		var bg := Color(0.10, 0.12, 0.18, 0.85)
+		var border := Color("#475569")
+		if not entry.get("alive", true):
+			bg = Color(0.20, 0.06, 0.06, 0.85)
+			border = Color("#7F1D1D")
+		elif not entry.get("is_bot", false):
+			border = Color("#34D399")
+		entry_box.add_theme_stylebox_override("panel", _styled_panel(bg, border))
+		roster_list.add_child(entry_box)
+
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 1)
+		entry_box.add_child(col)
+
+		var name_lbl := Label.new()
+		var prefix := "🤖 " if entry.get("is_bot", false) else "👤 "
+		var name_text: String = entry.get("name", "?")
+		name_lbl.text = prefix + name_text
+		name_lbl.add_theme_font_size_override("font_size", 11)
+		name_lbl.add_theme_color_override("font_color",
+			Color("#94A3B8") if entry.get("is_bot", false) else Color("#F8FAFC"))
+		col.add_child(name_lbl)
+
+		var stat_row := HBoxContainer.new()
+		stat_row.add_theme_constant_override("separation", 6)
+		col.add_child(stat_row)
+
+		var hp_lbl := Label.new()
+		var hp_val: int = int(entry.get("hp", 0))
+		hp_lbl.text = "HP %d" % hp_val
+		hp_lbl.add_theme_font_size_override("font_size", 11)
+		var hp_color := Color("#34D399")
+		if hp_val <= 25: hp_color = Color("#F87171")
+		elif hp_val <= 50: hp_color = Color("#FBBF24")
+		hp_lbl.add_theme_color_override("font_color", hp_color)
+		stat_row.add_child(hp_lbl)
+
+		var sw: int = int(entry.get("streak_w", 0))
+		var sl: int = int(entry.get("streak_l", 0))
+		if sw >= 2 or sl >= 2:
+			var streak_lbl := Label.new()
+			if sw >= 2:
+				streak_lbl.text = "W%d" % sw
+				streak_lbl.add_theme_color_override("font_color", Color("#34D399"))
+			else:
+				streak_lbl.text = "L%d" % sl
+				streak_lbl.add_theme_color_override("font_color", Color("#F87171"))
+			streak_lbl.add_theme_font_size_override("font_size", 11)
+			stat_row.add_child(streak_lbl)
+
+
 func _build_status_line() -> void:
 	status_label = Label.new()
 	status_label.anchor_left = 0.0
@@ -853,12 +956,40 @@ func _on_combat_started() -> void:
 
 func _on_combat_ended(player_won: bool) -> void:
 	_set_status("VICTORY!" if player_won else "DEFEAT")
-	fight_button.disabled = false
+	# In multiplayer, the next placement_phase_rpc re-enables the fight
+	# button. Locking it here avoids a window where the user could
+	# double-submit during the result hold.
+	if GameState.mode == "multiplayer":
+		fight_button.text = "WAITING…"
+		fight_button.disabled = true
+	else:
+		fight_button.disabled = false
 	reroll_button.disabled = false
 	_refresh_hud()
 	_refresh_shop()
 	_refresh_bench()
 	_refresh_synergies()
+
+
+func _on_mp_roster_updated(roster: Array) -> void:
+	_refresh_roster(roster)
+	# Server delivers a placement_phase signal alongside roster updates at
+	# the start of each round; that handler re-enables the ready button.
+
+
+func _on_mp_placement_started() -> void:
+	if fight_button:
+		fight_button.text = "READY"
+		fight_button.disabled = false
+	if reroll_button: reroll_button.disabled = false
+	_set_status("Round %d — place units, then click READY" % GameState.current_round)
+
+
+func _on_round_changed_mp_check(_round_num: int) -> void:
+	# In multiplayer, every round_changed is "placement phase started" since
+	# the server emits it at the top of placement.
+	if GameState.mode == "multiplayer":
+		_on_mp_placement_started()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -886,6 +1017,14 @@ func _on_fight_pressed() -> void:
 	if GameState.player_board.is_empty():
 		EventBus.banner_requested.emit("PLACE UNITS FIRST!", Color(1, 0.8, 0.2))
 		_set_status("drag units from bench onto the arena hexes, then fight")
+		return
+	if GameState.mode == "multiplayer":
+		# Submit board to server; server runs combat and pushes the result
+		# back via round_start_rpc / round_result_rpc.
+		NetworkManager.submit_board(GameState.player_board)
+		fight_button.text = "WAITING…"
+		fight_button.disabled = true
+		_set_status("Board submitted — waiting for round to resolve")
 		return
 	CombatSim.start_combat()
 

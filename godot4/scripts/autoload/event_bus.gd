@@ -37,6 +37,10 @@ signal round_ended(round_num: int)
 signal game_over(placement: int)
 signal banner_requested(text: String, color: Color)
 
+# ─── Multiplayer ────────────────────────────────────────────────────────────
+signal mp_roster_updated(roster: Array)
+signal mp_connection_state(state: String)
+
 # ─── Drag / UI ──────────────────────────────────────────────────────────────
 signal tooltip_requested(unit_data: Dictionary, screen_pos: Vector2)
 signal tooltip_hidden

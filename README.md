@@ -2,9 +2,21 @@
 
 A multiplayer auto-battler with **cats**. Eight factions, 48 units, hex board, shop phase → combat → results. Riot's TFT, but you're a cat.
 
-## Repo state — v3.5.0 (M1–M6 + post-M6 polish)
+## Repo state — v3.7.0 (multiplayer-capable)
 
-Single Godot project at `godot4/`: 3D hex arena sitting on a sculpted island in an animated ocean, 48 detailed procedural chibi cats with skeletal-style animation, full shop → combat → results loop, combat AI (tanks taunt, melee pounce, ranged kite), camera shake + hit-pause + cast halos, and a 15-clip procedural audio SFX pack wired through `AudioManager`. The legacy v2 `godot/` 2D port was removed at the end of M6 — it lives on only in git history (`git log --follow godot/`). See the [Post-M6 polish passes](#post-m6-polish-passes) section for the v3.1–v3.5 changelog.
+Single Godot project at `godot4/`: 3D hex arena sitting on a sculpted island in an animated ocean, 48 detailed procedural chibi cats with skeletal-style animation, full shop → combat → results loop, combat AI (tanks taunt, melee pounce, ranged kite), camera shake + hit-pause + cast halos, a 15-clip procedural audio SFX pack wired through `AudioManager`, and an 8-slot WebSocket multiplayer lobby (`NetworkManager` + `Lobby` autoloads) where bots fill empty slots and get replaced as players join. The legacy v2 `godot/` 2D port was removed at the end of M6 — it lives on only in git history (`git log --follow godot/`). See the [Post-M6 polish passes](#post-m6-polish-passes) section for the v3.1–v3.7 changelog.
+
+### Running multiplayer
+
+```bash
+# Dedicated server (no UI, listens on :7575)
+./tools/godot/Godot_v4.4-stable_linux.x86_64 --headless --path godot4 -- --server
+
+# Client — pick "Join Multiplayer" from the main menu, default URL ws://localhost:7575
+./tools/godot/Godot_v4.4-stable_linux.x86_64 --path godot4
+```
+
+The first connecting client replaces a bot slot; the next 6 do the same; bots remain in any unfilled slots and play out the round-robin alongside humans. Picking "Single Player" from the menu skips the lobby entirely and runs the v3.6.0 single-player loop locally.
 
 ## Quick start
 
@@ -198,6 +210,7 @@ Estimated cost: ~$10–20 for all 48 units.
 | **v3.4.1**   | Skeletal-style anim polish — breathing idle, butt-wiggle pounce, death twitch, bracing defend, crit tail-whip | ✅ done |
 | **v3.5.0**   | Audio SFX — `AudioManager` autoload, 12-voice polyphonic pool, 15 procedural WAVs wired to 13 EventBus signals | ✅ done |
 | **v3.6.0**   | Single-player polish — win/loss streak gold, themed enemy boards (faction primary + splash), TFT-style stage labels, INCOME + STREAK HUD chips, 3D damage numbers, spectator crowd, bench portraits, in-world star pips, game-over screen with restart | ✅ done |
+| **v3.7.0**   | Multiplayer — WebSocket host/client, 8-slot lobby with bot fill, round-robin pairings, server-authoritative HP/streaks/eliminations, main menu, lobby roster panel, dedicated headless server (`-- --server`) | ✅ done |
 
 ### M6 polish notes
 
@@ -217,6 +230,15 @@ Estimated cost: ~$10–20 for all 48 units.
 - **Combat AI (v3.4.0)** — tanks taunt enemies within 1 hex via `_find_target()`, overriding nearest; auto-attacks and single-target casts both respect the taunt. Melee units pounce at combat start to a free hex adjacent to their nearest enemy (processed in spawn order for stable claims). Ranged units kite back when an enemy is closer than preferred range, on an independent `move_cooldown` so they shoot *and* retreat in the same tick — backup hex must still keep a target in range. Headless regression stays green (player win, 274 ticks).
 - **Anim polish (v3.4.1)** — 7 animations, 48 models. Idle breathes (scale pulse, asymmetric ear flicks, weight shifting). Attack pins ears on windup, asymmetric paw swipe, back-leg push, tail bristle. Pounce has the classic cat butt-wiggle before launch + tail extends mid-flight. Defend is a bracing tremor with tucked tail. Death wobble-fights-then-falls with progressive ear droop and a final twitch. Crit tail whips counter-spin with impact-hold. Hurt stagger with puffed tail and head shake on recovery.
 - **Audio (v3.5.0)** — `AudioManager` autoload is a 12-voice polyphonic pool listening to 13 `EventBus` signals (`unit_attacked`, `unit_damaged`, `unit_died`, `unit_ability_cast`, `status_applied`, shop `buy`/`sell`/`reroll`, `unit_placed`, `unit_merged`, `level_changed`, `combat_started`, `combat_ended`). `tools/build_sfx.py` is a pure-stdlib (`wave` + `struct` + `math`) WAV synthesizer that regenerates all 15 clips: `python3 tools/build_sfx.py`.
+- **Multiplayer (v3.7.0)** — WebSocket-based, server-authoritative auto-battler. Files:
+    - `scripts/net/network_manager.gd` (autoload) — owns the `WebSocketMultiplayerPeer`. `host_lobby(port, name, dedicated)` / `join_lobby(url, name)` / `leave()`. Defines all RPC stubs; server-broadcast RPCs use `@rpc("authority", "call_local", "reliable")` so the host processes its own messages.
+    - `scripts/net/lobby.gd` — server-only state. 8 fixed `Slot` records (peer_id, hp, gold, win/loss streak, alive, board, faction theme). `register_player` finds the first bot slot and replaces it; `unregister_player` reverts a slot back to a bot with a fresh `BotBrain`. Phase machine ticks `WAITING → PLACEMENT (30s timeout, or all humans submit) → COMBAT → RESULT (4s) → next placement` until ≤1 alive.
+    - `scripts/net/bot_brain.gd` — per-bot board synthesizer. Persistent `RandomNumberGenerator` keyed on slot index so each bot's roster is reproducible across rounds. 80% on-theme rolls via `GameData.roll_unit_in_faction`; star-up scales with round.
+    - `scripts/ui/main_menu.gd` + `scenes/main_menu.tscn` — entry scene (the project's `run/main_scene` now points here). Three buttons: Single Player, Host Multiplayer, Join Multiplayer. With `-- --server` on the CLI, the menu auto-bootstraps a dedicated host without rendering.
+    - **Round flow.** Server → client: `placement_phase_rpc(round, gold)` resets shop/economy on the client. Client buys/places, clicks READY → `submit_board_rpc(board)`. After everyone submits (or timeout), server pairs alive players via random shuffle (odd count plays a ghost board), runs `CombatSim.run_headless` for each pair, and broadcasts `round_start_rpc(opponent_name, opponent_board, seed)` + `round_result_rpc(won, damage, new_hp)` to each human. Client renders a local cinematic with the supplied opponent board; HP/banner come from the server.
+    - **Server-authoritative.** Gold is set by the server at placement; HP, streaks, and damage are computed and broadcast by the server. The client does spend gold locally during placement (no per-purchase RPC) — fine for trusted users; cheat-resistance is a future pass. `combat_sim._end_combat` now early-returns on `is_multiplayer_round` so the local sim never mutates economy.
+    - **Lobby roster panel** in `game_ui.gd::_build_roster_panel` — right-edge column of 8 mini-cards, color-coded HP, streak badge, 🤖/👤 prefix, dimmed when eliminated. Hidden in single-player.
+    - **Smoke test** — `scripts/lobby_test.gd` runs the lobby in-process without a network: registers a fake player, submits boards each round, watches the phase machine cycle 16+ rounds to a winner. Use as a CI hook: `godot --headless --path godot4 -s res://scripts/lobby_test.gd`.
 - **Single-player polish (v3.6.0)** — gameplay-side:
     - **Streak system.** `GameState.win_streak` / `loss_streak` track consecutive results; `get_streak_bonus_gold()` pays 0/0/+1/+1/+2/+2/+3 from streak length 0..6+, applied on top of the per-round base reward and interest. Loss-streaking is now an intentional economic move, not just a defeat.
     - **Themed enemy boards.** `combat_sim.generate_enemy_board` picks a primary faction theme each round (and a secondary splash from round 4); 70% of slots roll within the theme via `GameData.roll_unit_in_faction`, so the AI actually has synergies on its board. Round 1 stays mixed so the very first fight isn't already running a 4-piece bonus.
