@@ -48,17 +48,10 @@ func _ready() -> void:
 
 
 func _on_combat_ended_for_mp_banner(_player_won: bool) -> void:
-	if mp_pending_result.is_empty():
-		return
-	var won: bool = mp_pending_result.get("won", false)
-	var dmg: int = int(mp_pending_result.get("damage", 0))
-	if won:
-		EventBus.banner_requested.emit(
-			"VICTORY! vs %s" % mp_opponent_name, Color(0.3, 1, 0.5))
-	else:
-		EventBus.banner_requested.emit(
-			"DEFEAT! -%d HP" % dmg, Color(1, 0.3, 0.3))
-	mp_pending_result = {}
+	# Local cinematic finished — apply the server's verdict (HP, streak,
+	# banner) now. Stale results from prior rounds are no-ops via the
+	# is_empty() guard inside _apply_pending_mp_result().
+	_apply_pending_mp_result()
 
 
 func reset() -> void:
@@ -451,16 +444,36 @@ func on_remote_placement_phase(round_num: int, server_gold: int) -> void:
 
 
 func on_remote_round_start(round_num: int, opponent_name: String,
-		opponent_board: Dictionary, _combat_seed: int) -> void:
+		opponent_board: Dictionary, combat_seed: int) -> void:
 	current_round = round_num
 	mp_opponent_name = opponent_name
-	# Trigger the local cinematic. server-authoritative result lands separately.
-	CombatSim.start_combat_against(opponent_board, opponent_name)
+	# Trigger the local cinematic. The server's seed makes our crit rolls
+	# match the authoritative result, so the on-screen fight ends the way
+	# the banner says it ended.
+	CombatSim.start_combat_against(opponent_board, opponent_name, combat_seed)
 
 
 func on_remote_round_result(player_won: bool, damage_taken: int, new_hp: int) -> void:
-	health = new_hp
-	if player_won:
+	# Stash everything. Applied later by _on_combat_ended_for_mp_banner so the
+	# HUD doesn't reveal the new HP/streak while the cinematic is still
+	# resolving. If combat already wrapped (RPC raced ahead of the local
+	# sim end), apply right now — there's nothing to spoil.
+	mp_pending_result = {
+		"won": player_won,
+		"damage": damage_taken,
+		"hp": new_hp,
+	}
+	if not is_multiplayer_round:
+		_apply_pending_mp_result()
+
+
+func _apply_pending_mp_result() -> void:
+	if mp_pending_result.is_empty():
+		return
+	var won: bool = mp_pending_result.get("won", false)
+	var dmg: int = int(mp_pending_result.get("damage", 0))
+	health = int(mp_pending_result.get("hp", health))
+	if won:
 		win_streak += 1
 		loss_streak = 0
 	else:
@@ -468,13 +481,13 @@ func on_remote_round_result(player_won: bool, damage_taken: int, new_hp: int) ->
 		win_streak = 0
 	EventBus.health_changed.emit(health)
 	EventBus.streak_changed.emit(win_streak, loss_streak)
-	# Stash for the banner; the local cinematic will trigger it on its
-	# own combat_ended via _on_combat_ended_for_mp_banner.
-	mp_pending_result = {
-		"won": player_won,
-		"damage": damage_taken,
-		"hp": new_hp,
-	}
+	if won:
+		EventBus.banner_requested.emit(
+			"VICTORY! vs %s" % mp_opponent_name, Color(0.3, 1, 0.5))
+	else:
+		EventBus.banner_requested.emit(
+			"DEFEAT! -%d HP" % dmg, Color(1, 0.3, 0.3))
+	mp_pending_result = {}
 
 
 func on_remote_game_over(placement: int, _winner_name: String) -> void:

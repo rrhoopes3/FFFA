@@ -516,12 +516,16 @@ func _build_game_over_overlay() -> void:
 	vbox.add_child(btn_row)
 
 
-func _on_game_over(_placement: int) -> void:
+func _on_game_over(placement: int) -> void:
 	game_ended = true
 	if game_over_overlay == null:
 		return
-	game_over_subtitle.text = "Reached Stage %s · Level %d" % [
-		GameState.get_stage_label(), GameState.player_level]
+	if GameState.mode == "multiplayer":
+		game_over_subtitle.text = "Finished %s · Round %d" % [
+			_ordinal(placement), GameState.current_round]
+	else:
+		game_over_subtitle.text = "Reached Stage %s · Level %d" % [
+			GameState.get_stage_label(), GameState.player_level]
 	game_over_overlay.visible = true
 	game_over_overlay.modulate.a = 0.0
 	var tw := create_tween()
@@ -535,10 +539,31 @@ func _on_game_over(_placement: int) -> void:
 	for c in shop_cards: c.disabled = true
 
 
+func _ordinal(n: int) -> String:
+	if n <= 0:
+		return str(n)
+	var mod100 := n % 100
+	if mod100 >= 11 and mod100 <= 13:
+		return "%dth" % n
+	match n % 10:
+		1: return "%dst" % n
+		2: return "%dnd" % n
+		3: return "%drd" % n
+	return "%dth" % n
+
+
 func _on_play_again_pressed() -> void:
 	if game_over_overlay:
 		game_over_overlay.visible = false
 	game_ended = false
+	if GameState.mode == "multiplayer":
+		# MP runs on a server-driven phase loop — there is no clean "restart
+		# this match" handshake. Disconnect and bounce back to the main menu
+		# so the player can re-host or re-join a fresh lobby.
+		NetworkManager.leave()
+		GameState.mode = "single"  # ensure menu/scene treats next launch as fresh
+		get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+		return
 	GameState.start_game()
 
 
@@ -1034,14 +1059,17 @@ func _on_combat_started() -> void:
 
 
 func _on_combat_ended(player_won: bool) -> void:
-	_set_status("VICTORY!" if player_won else "DEFEAT")
-	# In multiplayer, the next placement_phase_rpc re-enables the fight
-	# button. Locking it here avoids a window where the user could
-	# double-submit during the result hold.
+	# In multiplayer the local sim's `player_won` is unreliable until the
+	# server's authoritative result is applied (which game_state does inside
+	# _on_combat_ended_for_mp_banner using the same combat_ended signal).
+	# Read the verdict back from GameState.health/streaks instead.
 	if GameState.mode == "multiplayer":
 		fight_button.text = "WAITING…"
 		fight_button.disabled = true
+		var verdict := "VICTORY!" if GameState.win_streak > 0 else "DEFEAT"
+		_set_status(verdict)
 	else:
+		_set_status("VICTORY!" if player_won else "DEFEAT")
 		fight_button.disabled = false
 	reroll_button.disabled = false
 	_refresh_hud()

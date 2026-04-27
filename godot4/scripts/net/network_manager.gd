@@ -91,6 +91,20 @@ func is_online() -> bool:
 	return mode != Mode.OFF
 
 
+## True if `peer_id` is the host or a currently-connected remote.
+## Used by the lobby to skip RPC sends to peer ids that exist only in our
+## slot table (the smoke harness's spoofed peer 42, or a peer that
+## disconnected mid-round before unregister fired).
+func is_peer_reachable(peer_id: int) -> bool:
+	if peer_id <= 0:
+		return false
+	if peer_id == 1 and is_server():
+		return true
+	if multiplayer.multiplayer_peer == null:
+		return false
+	return multiplayer.get_peers().has(peer_id)
+
+
 # ─── Helpers for game_ui / GameState (avoids local rpc edge cases) ──────────
 
 func submit_board(board: Dictionary) -> void:

@@ -112,10 +112,12 @@ func register_player(peer_id: int, player_name: String) -> void:
 		if s.is_bot and s.alive:
 			target = s
 			break
+	var revived := false
 	if target == null:
 		for s in slots:
 			if s.is_bot:
 				target = s
+				revived = true
 				break
 	if target == null:
 		print("[lobby] no slot available for peer %d, lobby is full" % peer_id)
@@ -124,6 +126,19 @@ func register_player(peer_id: int, player_name: String) -> void:
 	target.display_name = player_name if player_name != "" else "Player %d" % peer_id
 	target.is_bot = false
 	target.bot_brain = null
+	# A late joiner taking a dead bot slot would otherwise be skipped in
+	# every placement loop. Reset their core state so they actually play —
+	# fresh HP/gold, level 1, no inherited streak penalty.
+	if revived:
+		target.alive = true
+		target.hp = STARTING_HP
+		target.gold = STARTING_GOLD
+		target.level = 1
+		target.win_streak = 0
+		target.loss_streak = 0
+		target.board = {}
+		target.submitted_this_round = false
+		print("[lobby] revived dead slot %d for late joiner %s" % [target.index, target.display_name])
 	human_count += 1
 	print("[lobby] peer %d (%s) took slot %d" % [peer_id, target.display_name, target.index])
 	_broadcast_roster()
@@ -179,9 +194,11 @@ func _start_placement_phase() -> void:
 			s.board = s.bot_brain.generate_board(round_num)
 			s.submitted_this_round = true
 	_broadcast_roster()
-	# Notify each human of their gold income for the round.
+	# Notify each human of their gold income for the round. Skip peers we
+	# can't actually reach (e.g. the smoke-test spoofed peer, or someone
+	# who dropped between rounds and hasn't been unregistered yet).
 	for s in slots:
-		if s.alive and not s.is_bot and s.peer_id > 0:
+		if s.alive and not s.is_bot and NetworkManager.is_peer_reachable(s.peer_id):
 			NetworkManager.placement_phase_rpc.rpc_id(s.peer_id, round_num, s.gold)
 	print("[lobby] placement R%d (alive=%d humans=%d)" %
 		[round_num, alive_count, human_count])
@@ -202,8 +219,10 @@ func _start_combat_phase() -> void:
 	for pair in pairings:
 		var a: Slot = pair[0]
 		var b: Slot = pair[1]
+		# Seed is round-stable but pair-specific so two paired clients running
+		# the cinematic with the same seed reach the canonical outcome.
 		var seed_val: int = round_num * 1009 + a.index * 17 + b.index
-		var result := CombatSim.run_headless(a.board, b.board, false)
+		var result := CombatSim.run_headless(a.board, b.board, false, seed_val)
 		var a_won: bool = result.winner == "player"
 		_apply_combat_result(a, b, a_won, seed_val, false)
 		_apply_combat_result(b, a, not a_won and result.winner != "draw", seed_val, true)
@@ -235,8 +254,10 @@ func _apply_combat_result(self_slot: Slot, opp: Slot, won: bool, seed_val: int, 
 	else:
 		self_slot.loss_streak += 1
 		self_slot.win_streak = 0
-	# Tell the human player what happened. Bots don't need RPCs.
-	if not self_slot.is_bot and self_slot.peer_id > 0:
+	# Tell the human player what happened. Bots don't need RPCs, and peers
+	# that aren't actually connected (smoke-test spoof, mid-round drops)
+	# get skipped to avoid Godot's "unknown peer ID" error spam.
+	if not self_slot.is_bot and NetworkManager.is_peer_reachable(self_slot.peer_id):
 		var opp_board: Dictionary = opp.board.duplicate(true)
 		NetworkManager.round_start_rpc.rpc_id(self_slot.peer_id,
 			round_num, opp.display_name, opp_board, seed_val)
@@ -320,7 +341,7 @@ func _end_match() -> void:
 	for i in ranked.size():
 		placement_by_index[ranked[i].index] = i + 1
 	for s in slots:
-		if not s.is_bot and s.peer_id > 0:
+		if not s.is_bot and NetworkManager.is_peer_reachable(s.peer_id):
 			var place: int = placement_by_index.get(s.index, SLOT_COUNT)
 			NetworkManager.mp_game_over_rpc.rpc_id(s.peer_id, place, winner_name)
 

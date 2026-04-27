@@ -14,13 +14,25 @@ var units: Array = []
 var tick_count: int = 0
 var _next_uid: int = 0
 
+# Per-combat RNG. Seeded explicitly at the start of every match so server
+# and client produce identical event streams when the server hands the
+# client a seed on round_start. Pre-combat randomness (board generation,
+# shop rolls) still uses the global RNG.
+var _rng: RandomNumberGenerator
+
 
 func _ready() -> void:
+	_rng = RandomNumberGenerator.new()
+	_rng.randomize()
 	combat_timer = Timer.new()
 	combat_timer.wait_time = TICK_SEC
 	combat_timer.one_shot = false
 	combat_timer.timeout.connect(_tick)
 	add_child(combat_timer)
+
+
+func set_combat_seed(seed_val: int) -> void:
+	_rng.seed = seed_val
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -56,18 +68,34 @@ func start_combat() -> void:
 ## Multiplayer entry point — opponent's board is supplied by the server.
 ## Skips economy mutation in `_end_combat`; the authoritative result is
 ## delivered separately via NetworkManager.round_result_rpc.
-func start_combat_against(opponent_board: Dictionary, opponent_name: String) -> void:
+##
+## `combat_seed` lets the server hand both clients an identical seed so the
+## local cinematic resolves to the same crits/damage as the canonical run.
+## `0` falls back to a non-deterministic randomize() (single-player path).
+func start_combat_against(opponent_board: Dictionary, opponent_name: String,
+		combat_seed: int = 0) -> void:
 	GameState.is_multiplayer_round = true
 	GameState.mp_opponent_name = opponent_name
 	GameState.enemy_board = opponent_board.duplicate(true)
+	if combat_seed != 0:
+		set_combat_seed(combat_seed)
+	else:
+		_rng.randomize()
 	start_combat()
 
 
-## Run a hardcoded fight headlessly (used by sim_test scene).
+## Run a hardcoded fight headlessly (used by sim_test scene and the
+## multiplayer server). Pass `combat_seed != 0` to make the run
+## reproducible — the lobby uses this so a paired client cinematic with
+## the same seed sees the same crits/damage rolls.
 ## Returns the result dict: {winner: "player"|"enemy"|"draw", ticks: int, log: Array}
 func run_headless(player_board: Dictionary, enemy_board: Dictionary,
-		emit_signals: bool = false) -> Dictionary:
+		emit_signals: bool = false, combat_seed: int = 0) -> Dictionary:
 	combat_timer.stop()
+	if combat_seed != 0:
+		set_combat_seed(combat_seed)
+	else:
+		_rng.randomize()
 	GameState.combat_state = "combat"
 	GameState.player_board = player_board.duplicate(true)
 	GameState.enemy_board = enemy_board.duplicate(true)
@@ -248,7 +276,7 @@ func _process_attack(attacker: Dictionary, target: Dictionary,
 	var damage: int = attacker.attack
 	var is_crit := false
 
-	if attacker.crit_chance > 0 and randf() * 100.0 < attacker.crit_chance:
+	if attacker.crit_chance > 0 and _rng.randf() * 100.0 < attacker.crit_chance:
 		var mult: float = max(150.0, attacker.crit_damage) / 100.0
 		damage = int(damage * mult)
 		is_crit = true

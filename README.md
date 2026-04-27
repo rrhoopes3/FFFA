@@ -211,6 +211,7 @@ Estimated cost: ~$10–20 for all 48 units.
 | **v3.5.0**   | Audio SFX — `AudioManager` autoload, 12-voice polyphonic pool, 15 procedural WAVs wired to 13 EventBus signals | ✅ done |
 | **v3.6.0**   | Single-player polish — win/loss streak gold, themed enemy boards (faction primary + splash), TFT-style stage labels, INCOME + STREAK HUD chips, 3D damage numbers, spectator crowd, bench portraits, in-world star pips, game-over screen with restart | ✅ done |
 | **v3.7.0**   | Multiplayer — WebSocket host/client, 8-slot lobby with bot fill, round-robin pairings, server-authoritative HP/streaks/eliminations, main menu, lobby roster panel, dedicated headless server (`-- --server`) | ✅ done |
+| **v3.7.1**   | MP fixes — deterministic combat seed (server hands client a seed so the cinematic matches the canonical result), HP/streak deferred until local cinematic ends (banner no longer spoiled mid-fight), MP-aware Play Again returns to main menu instead of restarting locally, late joiners taking a dead bot slot get revived with fresh HP/gold, RPC sends gated on `is_peer_reachable` (smoke harness now silent) | ✅ done |
 
 ### M6 polish notes
 
