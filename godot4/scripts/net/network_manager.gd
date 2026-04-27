@@ -38,7 +38,11 @@ func _ready() -> void:
 func host_lobby(port: int = DEFAULT_PORT, player_name: String = "Host", dedicated: bool = false) -> bool:
 	leave()
 	peer = WebSocketMultiplayerPeer.new()
-	var err := peer.create_server(port)
+	# Dedicated servers sit behind Caddy's TLS termination — bind to
+	# loopback only so the raw WS port isn't reachable from the public
+	# internet. Desktop hosts default to all interfaces for LAN play.
+	var bind_addr: String = "127.0.0.1" if dedicated else "*"
+	var err := peer.create_server(port, bind_addr)
 	if err != OK:
 		push_error("[net] create_server(%d) failed: %s" % [port, err])
 		emit_signal("connection_state_changed", "error")

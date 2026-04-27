@@ -7,7 +7,8 @@ extends Control
 ## a one-liner that just attaches this script to a root Control.
 
 const HOST_GAME_SCENE := "res://scenes/main.tscn"
-const DEFAULT_JOIN_URL := "ws://localhost:7575"
+const DEFAULT_JOIN_URL_LOCAL := "ws://localhost:7575"
+const DEFAULT_JOIN_URL_WEB := "wss://fffa.cat/ws"
 
 var status_label: Label
 var url_field: LineEdit
@@ -80,10 +81,11 @@ func _build_ui() -> void:
 	name_row.add_child(name_field)
 	center.add_child(name_row)
 
-	# URL field — used by Join.
+	# URL field — used by Join. Defaults differ between web export (points
+	# at the production server) and desktop builds (localhost for dev).
 	var url_row := _row("Join URL:")
 	url_field = LineEdit.new()
-	url_field.text = DEFAULT_JOIN_URL
+	url_field.text = DEFAULT_JOIN_URL_WEB if OS.has_feature("web") else DEFAULT_JOIN_URL_LOCAL
 	url_field.custom_minimum_size = Vector2(220, 32)
 	url_row.add_child(url_field)
 	center.add_child(url_row)
@@ -97,9 +99,13 @@ func _build_ui() -> void:
 	single.pressed.connect(_on_single_pressed)
 	center.add_child(single)
 
-	var host := _make_button("⌂  HOST MULTIPLAYER (8-slot lobby)", Color("#FBBF24"))
-	host.pressed.connect(_on_host_pressed)
-	center.add_child(host)
+	# Hosting from a browser tab doesn't work — WebSocketMultiplayerPeer
+	# can't bind a listening socket inside a browser sandbox. Hide the
+	# Host button on web; users join the dedicated server instead.
+	if not OS.has_feature("web"):
+		var host := _make_button("⌂  HOST MULTIPLAYER (8-slot lobby)", Color("#FBBF24"))
+		host.pressed.connect(_on_host_pressed)
+		center.add_child(host)
 
 	var join := _make_button("⤴  JOIN MULTIPLAYER", Color("#60A5FA"))
 	join.pressed.connect(_on_join_pressed)
