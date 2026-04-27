@@ -15,12 +15,12 @@ const Hex = preload("res://scripts/sim/hex.gd")
 
 # ─── Layout constants ───────────────────────────────────────────────────────
 const HEX_SIZE := 0.55                # Hex circumradius in world units
-const TILE_HEIGHT := 0.06             # Tile thickness
-const TILE_GAP := 0.04                # Visual gap between tiles
-const PLAYER_TINT := Color(0.18, 0.32, 0.55)
-const ENEMY_TINT := Color(0.55, 0.18, 0.22)
-const NEUTRAL_TINT := Color(0.22, 0.24, 0.28)
-const HOVER_TINT := Color(0.95, 0.85, 0.35)
+const TILE_HEIGHT := 0.04             # Tile thickness — slim so they read as glyphs
+const TILE_GAP := 0.06                # Visual gap between tiles
+const TILE_Y := 0.10                  # Above ArenaRing cap (y=0.05) AND plateau noise
+const PLAYER_TINT := Color(0.25, 0.55, 1.00)   # Bright blue
+const ENEMY_TINT  := Color(1.00, 0.35, 0.45)   # Warm coral
+const HOVER_TINT  := Color(1.00, 0.90, 0.40)   # Gold
 
 # ─── Signals ────────────────────────────────────────────────────────────────
 signal hex_hovered(hex_key: String)
@@ -28,23 +28,28 @@ signal hex_clicked(hex_key: String)
 signal hex_unhovered
 
 # ─── State ──────────────────────────────────────────────────────────────────
-var tiles: Dictionary = {}            # hex_key → {body, mesh, base_color}
+var tiles: Dictionary = {}            # hex_key → {body, mesh, material, base_color}
 var hovered_key: String = ""
 var _hex_mesh: ArrayMesh
 var _hex_shape: ConvexPolygonShape3D
+var _fade_tween: Tween
 
 
 func _ready() -> void:
 	_build_shared_resources()
 	_generate_grid()
 	set_process_unhandled_input(true)
+	# Fade hex tiles out when combat starts, fade back in on end.
+	EventBus.combat_started.connect(_on_combat_started)
+	EventBus.combat_ended.connect(_on_combat_ended)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  PUBLIC API
 # ═══════════════════════════════════════════════════════════════════════════
 
-## Convert (col, row) offset coords to world position. Center of grid is at origin.
+## Convert (col, row) offset coords to world position (tile TOP — the standing
+## surface for units). Center of grid is at origin.
 static func hex_to_world(col: int, row: int) -> Vector3:
 	var w := sqrt(3.0) * HEX_SIZE
 	var h := 1.5 * HEX_SIZE
@@ -53,7 +58,8 @@ static func hex_to_world(col: int, row: int) -> Vector3:
 	# Center the grid (col 0..6, row 0..7)
 	x -= w * 3.0 + w * 0.25
 	z -= h * 3.5
-	return Vector3(x, 0.0, z)
+	# Y = top of the tile prism so units placed at hex_to_world stand on it.
+	return Vector3(x, TILE_Y + TILE_HEIGHT * 0.5, z)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -127,29 +133,33 @@ func _generate_grid() -> void:
 func _make_tile(col: int, row: int) -> void:
 	var key := Hex.key(col, row)
 	var pos := hex_to_world(col, row)
-	var base_color := NEUTRAL_TINT
-	if row in Hex.PLAYER_ROWS:
-		base_color = PLAYER_TINT
-	elif row in Hex.ENEMY_ROWS:
-		base_color = ENEMY_TINT
+	# Tile body is centered at TILE_Y; hex_to_world returns the top surface.
+	pos.y = TILE_Y
+	var base_color := PLAYER_TINT if row in Hex.PLAYER_ROWS else ENEMY_TINT
 
 	var body := StaticBody3D.new()
 	body.name = "Tile_%s" % key
 	body.position = pos
 	body.set_meta("hex_key", key)
-	# Use input ray pickable; layer 1 is enough.
 	body.input_ray_pickable = true
 	add_child(body)
 
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = _hex_mesh
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = base_color
+	# Darker albedo keeps the tile readable against grass; emission does the
+	# "magical summoning glyph" work. Transparency lets us fade during combat.
+	mat.albedo_color = Color(base_color.r * 0.35, base_color.g * 0.35, base_color.b * 0.35, 0.85)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.metallic = 0.0
-	mat.roughness = 0.7
+	mat.roughness = 0.55
 	mat.emission_enabled = true
 	mat.emission = base_color
-	mat.emission_energy_multiplier = 0.15
+	mat.emission_energy_multiplier = 0.85
+	# Rim light so edges read against the environment.
+	mat.rim_enabled = true
+	mat.rim = 0.5
+	mat.rim_tint = 0.5
 	mesh.material_override = mat
 	body.add_child(mesh)
 
@@ -193,15 +203,48 @@ func _update_hover(mouse_pos: Vector2) -> void:
 func _set_hover(new_key: String) -> void:
 	if hovered_key != "" and tiles.has(hovered_key):
 		var prev = tiles[hovered_key]
-		prev.material.albedo_color = prev.base_color
+		prev.material.albedo_color = Color(
+			prev.base_color.r * 0.35, prev.base_color.g * 0.35, prev.base_color.b * 0.35, 0.85,
+		)
 		prev.material.emission = prev.base_color
-		prev.material.emission_energy_multiplier = 0.15
+		prev.material.emission_energy_multiplier = 0.85
 	hovered_key = new_key
 	if new_key != "" and tiles.has(new_key):
 		var cur = tiles[new_key]
-		cur.material.albedo_color = HOVER_TINT
+		cur.material.albedo_color = Color(HOVER_TINT.r * 0.45, HOVER_TINT.g * 0.45, HOVER_TINT.b * 0.2, 0.95)
 		cur.material.emission = HOVER_TINT
-		cur.material.emission_energy_multiplier = 0.6
+		cur.material.emission_energy_multiplier = 2.2
 		hex_hovered.emit(new_key)
 	else:
 		hex_unhovered.emit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  PHASE FADE — tiles fade out in combat for an uncluttered fight view
+# ═══════════════════════════════════════════════════════════════════════════
+
+func _on_combat_started() -> void:
+	_fade_tiles(0.0, 0.5)
+
+
+func _on_combat_ended(_player_won: bool) -> void:
+	_fade_tiles(1.0, 0.6)
+
+
+func _fade_tiles(target_alpha: float, duration: float) -> void:
+	if _fade_tween and _fade_tween.is_valid():
+		_fade_tween.kill()
+	_fade_tween = create_tween().set_parallel(true)
+	for key in tiles:
+		var t = tiles[key]
+		var mat: StandardMaterial3D = t.material
+		_fade_tween.tween_method(
+			Callable(self, "_apply_alpha").bind(mat, t.base_color),
+			mat.albedo_color.a, target_alpha, duration,
+		)
+
+
+func _apply_alpha(a: float, mat: StandardMaterial3D, base_color: Color) -> void:
+	# Dim emission along with albedo so tiles truly vanish during combat.
+	mat.albedo_color = Color(base_color.r * 0.35, base_color.g * 0.35, base_color.b * 0.35, a * 0.85)
+	mat.emission_energy_multiplier = a * 0.85
