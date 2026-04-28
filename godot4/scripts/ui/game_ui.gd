@@ -380,7 +380,7 @@ func _build_action_buttons() -> void:
 	bar.anchor_top = 1.0
 	bar.anchor_right = 1.0
 	bar.anchor_bottom = 1.0
-	bar.offset_left = -460
+	bar.offset_left = -420
 	bar.offset_top = -148
 	bar.offset_right = -16
 	bar.offset_bottom = -116
@@ -399,7 +399,7 @@ func _build_action_buttons() -> void:
 func _make_action_button(label: String, callback: Callable) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.custom_minimum_size = Vector2(140, 32)
+	btn.custom_minimum_size = Vector2(128, 32)
 	btn.pressed.connect(callback)
 	return btn
 
@@ -447,6 +447,41 @@ func _show_banner(text: String, color: Color) -> void:
 	tw.tween_property(banner_label, "scale", Vector2(1.0, 1.0), 0.18)
 	tw.tween_interval(1.0)
 	tw.tween_property(banner_label, "modulate:a", 0.0, 0.55)
+
+
+func _pop_control(ctrl: Control, amount: float = 1.1) -> void:
+	if ctrl == null or not is_instance_valid(ctrl):
+		return
+	ctrl.pivot_offset = ctrl.size * 0.5
+	ctrl.scale = Vector2.ONE
+	var tw := create_tween()
+	tw.tween_property(ctrl, "scale", Vector2(amount, amount), 0.10)\
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(ctrl, "scale", Vector2.ONE, 0.16)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+func _shake_control(ctrl: Control) -> void:
+	if ctrl == null or not is_instance_valid(ctrl):
+		return
+	var start_pos := ctrl.position
+	var tw := create_tween()
+	tw.tween_property(ctrl, "position", start_pos + Vector2(6, 0), 0.045)
+	tw.tween_property(ctrl, "position", start_pos + Vector2(-6, 0), 0.07)
+	tw.tween_property(ctrl, "position", start_pos, 0.045)
+
+
+func _animate_shop_refresh() -> void:
+	for i in shop_cards.size():
+		var card: Control = shop_cards[i]
+		if card == null or not is_instance_valid(card):
+			continue
+		card.pivot_offset = card.size * 0.5
+		card.scale = Vector2(0.94, 0.94)
+		var tw := create_tween()
+		tw.tween_interval(float(i) * 0.035)
+		tw.tween_property(card, "scale", Vector2.ONE, 0.18)\
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _build_game_over_overlay() -> void:
@@ -1023,15 +1058,23 @@ func _next_threshold(faction: String, count: int) -> int:
 #  EVENT HANDLERS — game state → UI refresh
 # ═══════════════════════════════════════════════════════════════════════════
 
-func _on_unit_bought(_unit_id: String, _slot: int) -> void:
+func _on_unit_bought(unit_id: String, shop_index: int) -> void:
 	_refresh_bench()
 	_refresh_shop()
 	_refresh_hud()
+	if shop_index >= 0 and shop_index < shop_cards.size():
+		_pop_control(shop_cards[shop_index], 1.08)
+	for i in BENCH_SIZE:
+		var u = GameState.bench[i]
+		if u != null and u.id == unit_id:
+			_pop_control(bench_slots[i], 1.12)
+			break
 
 
 func _on_unit_sold_signal(_unit_id: String, _source: String) -> void:
 	_refresh_bench()
 	_refresh_hud()
+	_pop_control(sell_zone, 1.08)
 
 
 func _on_unit_placed(_unit_id: String, _hex_key: String) -> void:
@@ -1048,6 +1091,11 @@ func _on_unit_merged(unit_id: String, new_stars: int) -> void:
 	_refresh_bench()
 	_refresh_synergies()
 	_set_status("MERGED → %s ★%d" % [unit_id, new_stars])
+	for i in BENCH_SIZE:
+		var u = GameState.bench[i]
+		if u != null and u.id == unit_id and int(u.stars) == new_stars:
+			_pop_control(bench_slots[i], 1.18)
+			break
 
 
 func _on_combat_started() -> void:
@@ -1106,16 +1154,26 @@ func _on_round_changed_mp_check(_round_num: int) -> void:
 func _on_shop_card_pressed(index: int) -> void:
 	if not GameState.try_buy_unit(index):
 		_set_status("can't buy: not enough gold or bench full")
+		if index >= 0 and index < shop_cards.size():
+			_shake_control(shop_cards[index])
 
 
 func _on_reroll_pressed() -> void:
 	if not GameState.try_reroll():
 		_set_status("can't reroll: need 2g")
+		_shake_control(reroll_button)
+	else:
+		_animate_shop_refresh()
+		_pop_control(reroll_button, 1.08)
 
 
 func _on_levelup_pressed() -> void:
 	if not GameState.try_level_up():
 		_set_status("can't level up")
+		_shake_control(levelup_button)
+	else:
+		_pop_control(levelup_button, 1.12)
+		_pop_control(hud_level_label.get_parent() if hud_level_label else null, 1.12)
 
 
 func _on_fight_pressed() -> void:

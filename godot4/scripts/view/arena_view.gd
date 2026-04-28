@@ -83,9 +83,11 @@ func _ready() -> void:
 	EventBus.combat_unit_spawned.connect(_on_combat_unit_spawned)
 	EventBus.unit_attacked.connect(_on_unit_attacked)
 	EventBus.unit_damaged.connect(_on_unit_damaged)
+	EventBus.unit_healed.connect(_on_unit_healed)
 	EventBus.unit_died.connect(_on_unit_died)
 	EventBus.unit_moved.connect(_on_unit_moved)
 	EventBus.unit_ability_cast.connect(_on_unit_ability_cast)
+	EventBus.status_applied.connect(_on_status_applied)
 
 	# Game flow — restart wipes the shop view so the cleared board re-renders.
 	EventBus.game_started.connect(_on_game_started)
@@ -226,12 +228,14 @@ func rebuild_shop_view() -> void:
 		_on_enemy_preview_ready(GameState.enemy_board)
 
 
-func _spawn_shop_unit(unit_id: String, stars: int, hex_key: String) -> void:
+func _spawn_shop_unit(unit_id: String, stars: int, hex_key: String, animate: bool = false) -> void:
 	var view: Node3D = UnitView.new()
 	view.name = "Shop_%s_%s" % [unit_id, hex_key]
 	add_child(view)
 	# Use a synthetic uid (hashed hex_key) so view internals are happy.
 	view.setup(hash(hex_key), unit_id, hex_key, true, stars, 1000)
+	if animate:
+		view.play_spawn_intro()
 	shop_views[hex_key] = view
 
 
@@ -248,7 +252,7 @@ func _on_unit_placed(unit_id: String, hex_key: String) -> void:
 	var stars := 1
 	if u != null and u is Dictionary:
 		stars = u.get("stars", 1)
-	_spawn_shop_unit(unit_id, stars, hex_key)
+	_spawn_shop_unit(unit_id, stars, hex_key, true)
 
 
 func _on_unit_removed(_unit_id: String, hex_key: String) -> void:
@@ -328,7 +332,7 @@ func _on_units_swapped(hex_a: String, hex_b: String) -> void:
 			shop_views.erase(hk)
 		var u = GameState.player_board.get(hk, null)
 		if u != null:
-			_spawn_shop_unit(u.id, u.get("stars", 1), hk)
+			_spawn_shop_unit(u.id, u.get("stars", 1), hk, true)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -374,6 +378,7 @@ func _on_combat_unit_spawned(uid: int, unit_id: String, hex_key: String,
 			break
 	var max_hp: int = stat_unit.get("max_hp", 1) if not stat_unit.is_empty() else 1
 	view.setup(uid, unit_id, hex_key, is_player, stars, max_hp)
+	view.play_spawn_intro(float(uid % 8) * 0.035)
 	combat_views[uid] = view
 
 
@@ -415,6 +420,13 @@ func _on_unit_damaged(uid: int, hp: int, _max_hp: int) -> void:
 	var view = combat_views.get(uid, null)
 	if view:
 		view.take_damage(hp)
+
+
+func _on_unit_healed(uid: int, amount: int) -> void:
+	var view = combat_views.get(uid, null)
+	if view:
+		view.play_heal(amount)
+		_spawn_heal_number(view.global_position + Vector3(0, 1.15, 0), amount)
 
 
 func _on_unit_died(uid: int) -> void:
@@ -498,6 +510,13 @@ func _on_unit_ability_cast(uid: int, _ability_name: String) -> void:
 		view.play_cast()
 		_spawn_cast_halo(view.global_position + Vector3(0, 0.05, 0), view.is_player)
 		add_camera_trauma(0.25)
+
+
+func _on_status_applied(uid: int, status_type: String, duration: float) -> void:
+	var view = combat_views.get(uid, null)
+	if view:
+		view.play_status(status_type, duration)
+		_spawn_status_ring(view.global_position + Vector3(0, 0.08, 0), status_type, duration)
 
 
 func _on_unit_merged_celebrate(unit_id: String, new_stars: int) -> void:
@@ -620,6 +639,41 @@ func _spawn_cast_halo(world_pos: Vector3, is_player: bool) -> void:
 	tween.chain().tween_callback(ring.queue_free)
 
 
+func _spawn_status_ring(world_pos: Vector3, status_type: String, duration: float) -> void:
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = 0.34
+	torus.outer_radius = 0.42
+	torus.rings = 28
+	torus.ring_segments = 6
+	ring.mesh = torus
+	var mat := StandardMaterial3D.new()
+	var col := Color(0.55, 1.0, 0.35)
+	match status_type:
+		"stun":
+			col = Color(1.0, 0.88, 0.25)
+		"poison":
+			col = Color(0.45, 1.0, 0.35)
+		"silence":
+			col = Color(0.78, 0.45, 1.0)
+	mat.albedo_color = col
+	mat.emission_enabled = true
+	mat.emission = col
+	mat.emission_energy_multiplier = 4.0
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	ring.material_override = mat
+	ring.position = world_pos
+	add_child(ring)
+	var life := clampf(duration, 0.55, 1.4)
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(ring, "rotation", Vector3(0.0, TAU, 0.0), life)
+	tween.tween_property(ring, "scale", Vector3(2.2, 1.0, 2.2), life)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(mat, "albedo_color:a", 0.0, life).set_delay(life * 0.35)
+	tween.chain().tween_callback(ring.queue_free)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  HEX CLICK PASSTHROUGH (for selection / future tooltip)
 # ═══════════════════════════════════════════════════════════════════════════
@@ -635,30 +689,56 @@ func _on_hex_clicked(hex_key: String) -> void:
 func _spawn_damage_number(world_pos: Vector3, amount: int, is_crit: bool) -> void:
 	var lbl := Label3D.new()
 	lbl.text = ("%d!" % amount) if is_crit else str(amount)
-	lbl.font_size = 96 if is_crit else 72
-	lbl.outline_size = 14
+	lbl.font_size = 84 if is_crit else 56
+	lbl.outline_size = 12
 	var tint: Color = Color(1.0, 0.85, 0.20) if is_crit else Color(1.0, 0.98, 0.95)
 	lbl.modulate = tint
 	lbl.outline_modulate = Color(0, 0, 0, 0.92)
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	lbl.fixed_size = true
-	lbl.pixel_size = 0.0045 if is_crit else 0.0033
+	lbl.pixel_size = 0.0036 if is_crit else 0.00255
 	lbl.no_depth_test = true
 	# Jitter the start position so sequential hits don't stack on one pixel.
 	var jitter := Vector3(randf_range(-0.22, 0.22), 0.0, randf_range(-0.22, 0.22))
 	lbl.position = world_pos + jitter
 	add_child(lbl)
-	var end_pos := lbl.position + Vector3(randf_range(-0.3, 0.3), 1.45, randf_range(-0.3, 0.3))
+	var end_pos := lbl.position + Vector3(randf_range(-0.28, 0.28), 1.2, randf_range(-0.28, 0.28))
 	var tween := create_tween().set_parallel(true)
-	tween.tween_property(lbl, "position", end_pos, 0.85)\
+	tween.tween_property(lbl, "position", end_pos, 0.72)\
 		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_property(lbl, "modulate:a", 0.0, 0.55).set_delay(0.35)
+	tween.tween_property(lbl, "modulate:a", 0.0, 0.45).set_delay(0.28)
 	# Pop-in scale pulse — separate non-parallel chain so it sequences cleanly.
 	var pop := create_tween()
 	pop.tween_property(lbl, "scale", Vector3(1.35, 1.35, 1.35), 0.10)\
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	pop.tween_property(lbl, "scale", Vector3.ONE, 0.12)
-	get_tree().create_timer(1.1).timeout.connect(lbl.queue_free)
+	get_tree().create_timer(0.95).timeout.connect(lbl.queue_free)
+
+
+func _spawn_heal_number(world_pos: Vector3, amount: int) -> void:
+	var lbl := Label3D.new()
+	lbl.text = "+%d" % amount
+	lbl.font_size = 68
+	lbl.outline_size = 12
+	lbl.modulate = Color(0.55, 1.0, 0.58)
+	lbl.outline_modulate = Color(0, 0, 0, 0.88)
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.fixed_size = true
+	lbl.pixel_size = 0.0031
+	lbl.no_depth_test = true
+	var jitter := Vector3(randf_range(-0.18, 0.18), 0.0, randf_range(-0.18, 0.18))
+	lbl.position = world_pos + jitter
+	add_child(lbl)
+	var end_pos := lbl.position + Vector3(randf_range(-0.2, 0.2), 1.1, randf_range(-0.2, 0.2))
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(lbl, "position", end_pos, 0.75)\
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(lbl, "modulate:a", 0.0, 0.45).set_delay(0.28)
+	var pop := create_tween()
+	pop.tween_property(lbl, "scale", Vector3(1.22, 1.22, 1.22), 0.08)\
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	pop.tween_property(lbl, "scale", Vector3.ONE, 0.12)
+	get_tree().create_timer(0.95).timeout.connect(lbl.queue_free)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

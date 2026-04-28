@@ -32,11 +32,19 @@ var anim_player: AnimationPlayer      # Skeletal AnimationPlayer from .glb
 
 # ─── Animation state ────────────────────────────────────────────────────────
 var target_world_pos: Vector3 = Vector3.ZERO
+var move_start_pos: Vector3 = Vector3.ZERO
+var move_timer: float = 0.0
+var move_duration: float = 0.0
+var moving: bool = false
 var move_speed: float = 2.5           # m/s
 var bob_phase: float = 0.0
 var hurt_timer: float = 0.0
 var attack_timer: float = 0.0
 var cast_timer: float = 0.0
+var spawn_delay: float = 0.0
+var spawn_timer: float = 0.0
+var disc_pulse_timer: float = 0.0
+var disc_pulse_strength: float = 1.0
 var lunge_dir: Vector3 = Vector3.ZERO   # Set on attack, multiplied by sin curve each frame
 var hurt_dir: Vector3 = Vector3.ZERO    # Set on damage, knockback away from attacker
 var pending_hurt_dir: Vector3 = Vector3.ZERO  # Set by arena_view from the attacker's position before damage signal arrives
@@ -44,6 +52,8 @@ var mesh_root_base_y: float = 0.0       # Base Y from origin-correction; bob/lun
 var base_yaw: float = 0.0               # Team-facing yaw (PI for enemies, 0 for player)
 var target_yaw: float = 0.0             # Lerp target — used for face-the-attacker rotation
 var prev_position: Vector3 = Vector3.ZERO  # For move-lean and walk bounce
+var hp_display_pct: float = 1.0
+var hp_target_pct: float = 1.0
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 const PLAYER_COLOR := Color(0.30, 0.55, 0.95)
@@ -53,6 +63,8 @@ const ATTACK_DURATION := 0.42       # 0.12 windup + 0.18 strike + 0.12 recover
 const ATTACK_WINDUP := 0.12
 const ATTACK_STRIKE := 0.18
 const CAST_DURATION := 0.45
+const SPAWN_DURATION := 0.38
+const MOVE_ARC_HEIGHT := 0.30
 const BOB_AMPLITUDE := 0.04
 const BOB_SPEED := 2.5
 const MESH_SCALE := 0.5                # Shrink models relative to hex tiles
@@ -60,6 +72,7 @@ const SWAY_AMPLITUDE := 0.025
 const SWAY_SPEED := 1.7
 const KNOCKBACK_DISTANCE := 0.18
 const YAW_LERP_SPEED := 8.0
+const DISC_PULSE_DURATION := 0.32
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -75,6 +88,8 @@ func setup(p_uid: int, p_unit_id: String, p_hex: String, p_is_player: bool,
 	stars = p_stars
 	max_hp = p_max_hp
 	current_hp = p_max_hp
+	hp_display_pct = 1.0
+	hp_target_pct = 1.0
 
 	bob_phase = randf() * TAU
 
@@ -234,11 +249,28 @@ func snap_to(hex_key_new: String) -> void:
 func move_to(hex_key_new: String) -> void:
 	hex_key = hex_key_new
 	var pos := Hex.parse(hex_key_new)
+	move_start_pos = position
 	target_world_pos = HexGrid.hex_to_world(pos.x, pos.y)
+	var dist := move_start_pos.distance_to(target_world_pos)
+	move_duration = clampf(dist / 4.8, 0.18, 0.46)
+	move_timer = 0.0
+	moving = true
+	_pulse_disc(0.55)
+	if attack_timer <= 0.0 and cast_timer <= 0.0 and hurt_timer <= 0.0:
+		_play_anim("pounce")
+
+
+func play_spawn_intro(delay: float = 0.0) -> void:
+	spawn_delay = maxf(0.0, delay)
+	spawn_timer = SPAWN_DURATION
+	scale = Vector3.ONE * 0.35
+	visible = spawn_delay <= 0.0
+	_pulse_disc(0.85)
 
 
 func play_attack(toward_hex: String, is_crit: bool = false) -> void:
 	attack_timer = ATTACK_DURATION
+	_pulse_disc(1.1 if is_crit else 0.65)
 	var pos := Hex.parse(toward_hex)
 	var tgt := HexGrid.hex_to_world(pos.x, pos.y)
 	var to_tgt := tgt - target_world_pos
@@ -256,6 +288,7 @@ func play_attack(toward_hex: String, is_crit: bool = false) -> void:
 
 func play_cast() -> void:
 	cast_timer = CAST_DURATION
+	_pulse_disc(1.2)
 	# Skeletal: pounce's leap-and-land motion layers nicely under the procedural spin
 	_play_anim("pounce")
 
@@ -263,6 +296,7 @@ func play_cast() -> void:
 func take_damage(new_hp: int) -> void:
 	current_hp = clampi(new_hp, 0, max_hp)
 	hurt_timer = HURT_FLASH_DURATION
+	_pulse_disc(0.45)
 	# Use the direction arena_view pre-loaded from the attacker, or fall back
 	# to the team-facing direction if it wasn't set (e.g. ability damage).
 	if pending_hurt_dir.length() > 0.01:
@@ -272,6 +306,16 @@ func take_damage(new_hp: int) -> void:
 		hurt_dir = Vector3(0, 0, 1.0 if not is_player else -1.0)
 	_update_hp_bar()
 	_play_anim("hurt")
+
+
+func play_heal(amount: int) -> void:
+	current_hp = clampi(current_hp + maxi(0, amount), 0, max_hp)
+	_update_hp_bar()
+	_pulse_disc(0.9)
+
+
+func play_status(_status_type: String, _duration: float) -> void:
+	_pulse_disc(0.75)
 
 
 func die() -> void:
@@ -326,6 +370,11 @@ func _apply_tumble(angle: float, axis: Vector3) -> void:
 	transform.basis = basis
 
 
+func _pulse_disc(strength: float = 1.0) -> void:
+	disc_pulse_timer = DISC_PULSE_DURATION
+	disc_pulse_strength = maxf(disc_pulse_strength, strength)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  ANIMATION TICK
 # ═══════════════════════════════════════════════════════════════════════════
@@ -334,15 +383,44 @@ func _process(delta: float) -> void:
 	if not alive:
 		return
 
+	if spawn_delay > 0.0:
+		spawn_delay = maxf(spawn_delay - delta, 0.0)
+		if spawn_delay > 0.0:
+			return
+		visible = true
+
+	var spawn_lift := 0.0
+	if spawn_timer > 0.0:
+		spawn_timer = maxf(spawn_timer - delta, 0.0)
+		var spawn_t := 1.0 - (spawn_timer / SPAWN_DURATION)
+		var eased_spawn := spawn_t * spawn_t * (3.0 - 2.0 * spawn_t)
+		scale = Vector3.ONE * lerpf(0.35, 1.0, eased_spawn)
+		spawn_lift = (1.0 - eased_spawn) * 0.62 + sin(spawn_t * PI) * 0.10
+		if spawn_timer <= 0.0:
+			scale = Vector3.ONE
+
 	# Smooth move toward target
 	prev_position = position
-	var to_target := target_world_pos - position
-	if to_target.length() > 0.01:
-		var step := move_speed * delta
-		if to_target.length() <= step:
+	var move_arc_y := 0.0
+	if moving:
+		move_timer += delta
+		var move_t := clampf(move_timer / maxf(move_duration, 0.001), 0.0, 1.0)
+		var eased_move := move_t * move_t * (3.0 - 2.0 * move_t)
+		position = move_start_pos.lerp(target_world_pos, eased_move)
+		move_arc_y = sin(move_t * PI) * MOVE_ARC_HEIGHT
+		if move_t >= 1.0:
+			moving = false
 			position = target_world_pos
-		else:
-			position += to_target.normalized() * step
+			if attack_timer <= 0.0 and cast_timer <= 0.0 and hurt_timer <= 0.0:
+				_play_anim("idle")
+	else:
+		var to_target := target_world_pos - position
+		if to_target.length() > 0.01:
+			var step := move_speed * delta
+			if to_target.length() <= step:
+				position = target_world_pos
+			else:
+				position += to_target.normalized() * step
 
 	# Yaw lerp — face the attack target during a strike, snap back to base
 	# yaw afterward. transform.basis isn't touched here; rotation.y is the
@@ -367,6 +445,10 @@ func _process(delta: float) -> void:
 
 	var lunge_xz := Vector3.ZERO
 	var stretch := Vector3.ONE
+	if moving:
+		var hop_t := clampf(move_timer / maxf(move_duration, 0.001), 0.0, 1.0)
+		var hop := sin(hop_t * PI)
+		stretch = Vector3(1.0 - 0.05 * hop, 1.0 + 0.12 * hop, 1.0 - 0.05 * hop)
 	if attack_timer > 0.0:
 		attack_timer = maxf(attack_timer - delta, 0.0)
 		if attack_timer <= 0.0:
@@ -402,10 +484,27 @@ func _process(delta: float) -> void:
 	if mesh_root:
 		mesh_root.position = Vector3(
 			lunge_xz.x + knock_xz.x + sway_x,
-			mesh_root_base_y + bob_y,
+			mesh_root_base_y + bob_y + move_arc_y + spawn_lift,
 			lunge_xz.z + knock_xz.z + sway_z,
 		)
 		mesh_root.scale = mesh_root.scale.lerp(stretch, delta * 14.0)
+
+	# Team disc pulse turns otherwise subtle events into readable beats.
+	if team_disc:
+		if disc_pulse_timer > 0.0:
+			disc_pulse_timer = maxf(disc_pulse_timer - delta, 0.0)
+			var pulse_t := 1.0 - (disc_pulse_timer / DISC_PULSE_DURATION)
+			var pulse := sin(pulse_t * PI) * disc_pulse_strength
+			team_disc.scale = Vector3.ONE * (1.0 + pulse * 0.22)
+			if team_disc.material_override:
+				team_disc.material_override.emission_energy_multiplier = 2.0 + pulse * 3.5
+			if disc_pulse_timer <= 0.0:
+				disc_pulse_strength = 1.0
+		else:
+			team_disc.scale = team_disc.scale.lerp(Vector3.ONE, delta * 10.0)
+			if team_disc.material_override and cast_timer <= 0.0:
+				team_disc.material_override.emission_energy_multiplier = lerpf(
+					team_disc.material_override.emission_energy_multiplier, 2.0, delta * 8.0)
 
 	# Cast — spin + float + stretch + glow halo
 	if cast_timer > 0.0:
@@ -431,6 +530,10 @@ func _process(delta: float) -> void:
 	elif mesh_root and mesh_root.rotation.y != 0.0:
 		# Decay rotation back to 0 once the cast finishes
 		mesh_root.rotation.y = lerpf(mesh_root.rotation.y, 0.0, delta * 6.0)
+
+	if hp_bar_fill and absf(hp_display_pct - hp_target_pct) > 0.002:
+		hp_display_pct = lerpf(hp_display_pct, hp_target_pct, minf(1.0, delta * 8.0))
+		_apply_hp_bar_pct(hp_display_pct)
 
 	# Hurt flash: white tint via duplicated material
 	if hurt_timer > 0.0:
@@ -469,14 +572,15 @@ func _snap_to_hex() -> void:
 	var pos := Hex.parse(hex_key)
 	target_world_pos = HexGrid.hex_to_world(pos.x, pos.y)
 	position = target_world_pos
+	move_start_pos = position
+	moving = false
 
 
 func _update_hp_bar() -> void:
 	if hp_bar_fill == null or max_hp <= 0:
 		return
 	var pct := clampf(float(current_hp) / float(max_hp), 0.0, 1.0)
-	hp_bar_fill.scale.x = pct
-	hp_bar_fill.position.x = -(0.66 * (1.0 - pct)) * 0.5
+	hp_target_pct = pct
 	var fill_mat: StandardMaterial3D = hp_bar_fill.material_override
 	if pct > 0.6:
 		fill_mat.albedo_color = Color(0.30, 0.95, 0.35)
@@ -484,3 +588,10 @@ func _update_hp_bar() -> void:
 		fill_mat.albedo_color = Color(0.95, 0.85, 0.20)
 	else:
 		fill_mat.albedo_color = Color(0.95, 0.25, 0.20)
+
+
+func _apply_hp_bar_pct(pct: float) -> void:
+	if hp_bar_fill == null:
+		return
+	hp_bar_fill.scale.x = pct
+	hp_bar_fill.position.x = -(0.66 * (1.0 - pct)) * 0.5
