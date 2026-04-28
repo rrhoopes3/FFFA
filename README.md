@@ -2,21 +2,59 @@
 
 A multiplayer auto-battler with **cats**. Eight factions, 48 units, hex board, shop phase → combat → results. Riot's TFT, but you're a cat.
 
-## Repo state — v3.7.0 (multiplayer-capable)
+## Repo state — v3.7.1 (live at [fffa.cat](https://fffa.cat))
 
 Single Godot project at `godot4/`: 3D hex arena sitting on a sculpted island in an animated ocean, 48 detailed procedural chibi cats with skeletal-style animation, full shop → combat → results loop, combat AI (tanks taunt, melee pounce, ranged kite), camera shake + hit-pause + cast halos, a 15-clip procedural audio SFX pack wired through `AudioManager`, and an 8-slot WebSocket multiplayer lobby (`NetworkManager` + `Lobby` autoloads) where bots fill empty slots and get replaced as players join. The legacy v2 `godot/` 2D port was removed at the end of M6 — it lives on only in git history (`git log --follow godot/`). See the [Post-M6 polish passes](#post-m6-polish-passes) section for the v3.1–v3.7 changelog.
 
 ### Running multiplayer
 
+**Production:** open <https://fffa.cat> in a browser. Splash fades into the Godot menu; "Join Multiplayer" auto-fills `wss://fffa.cat/ws`. First player gets 7 bots; the next 7 to connect each replace a bot.
+
+**Local dev:**
+
 ```bash
 # Dedicated server (no UI, listens on :7575)
 ./tools/godot/Godot_v4.4-stable_linux.x86_64 --headless --path godot4 -- --server
 
-# Client — pick "Join Multiplayer" from the main menu, default URL ws://localhost:7575
+# Client — pick "Join Multiplayer" from the main menu. Desktop builds default
+# the join URL to ws://localhost:7575; the web export defaults to wss://fffa.cat/ws.
 ./tools/godot/Godot_v4.4-stable_linux.x86_64 --path godot4
 ```
 
-The first connecting client replaces a bot slot; the next 6 do the same; bots remain in any unfilled slots and play out the round-robin alongside humans. Picking "Single Player" from the menu skips the lobby entirely and runs the v3.6.0 single-player loop locally.
+Picking "Single Player" from the menu skips the lobby entirely and runs the v3.6.0 single-player loop locally. The Host button is hidden in web exports — browsers can't bind a listening socket — so on fffa.cat the only multiplayer action is Join.
+
+### Production deployment (fffa.cat on the Contabo VPS)
+
+| Piece | Where |
+|---|---|
+| Static frontend | `/home/support/sites/FFFA/public/` — splash `index.html` redirects to `/game/` after ~1.1s |
+| Godot web export | `/home/support/sites/FFFA/public/game/` (rebuild via `--export-release Web` from `godot4/`; `export_presets.cfg` writes here) |
+| Dedicated server | `fffa-server.service` (`/etc/systemd/system/fffa-server.service`) → runs `Godot --headless --path godot4 -- --server`, bound to `127.0.0.1:7575` |
+| TLS + WS termination | Caddy block in `/etc/caddy/Caddyfile` (the `fffa.cat` entry) — `handle /ws { reverse_proxy 127.0.0.1:7575 }` |
+| Operational rollback | `public/game.old.20260428/` (Apr 12 build) and `public/index.html.bak.*` are preserved on disk; reverse-rename to revert |
+
+Common operations:
+
+```bash
+# Server status / restart
+sudo systemctl status fffa-server
+sudo systemctl restart fffa-server
+sudo journalctl -u fffa-server -f         # live log
+
+# Rebuild the web export after a code change
+./tools/godot/Godot_v4.4-stable_linux.x86_64 --headless --path godot4 --export-release Web
+# (writes to ../public/game/ per export_presets.cfg)
+
+# Reload Caddy after editing the Caddyfile
+sudo systemctl reload caddy
+
+# Verify end-to-end
+curl -sk -o /dev/null -w "%{http_code}\n" https://fffa.cat/             # 200
+curl -sk -o /dev/null -w "%{http_code}\n" https://fffa.cat/game/        # 200
+python3 -c 'import asyncio,websockets; asyncio.run(__import__("websockets").connect("wss://fffa.cat/ws").__aenter__())'
+```
+
+The dedicated server binds to loopback only (per `network_manager.host_lobby(... dedicated=true)`); the public WS endpoint is only reachable through Caddy's TLS-terminated `/ws` proxy. Cloudflare WebSockets pass through fine over HTTP/1.1 (the only protocol the Godot WS server speaks — HTTP/2 upgrades 502).
 
 ## Quick start
 
@@ -68,29 +106,38 @@ This needs a windowed run (not `--headless`) since headless skips rendering.
 
 ```
 godot4/
-├── project.godot                  Forward+ renderer; autoloads listed below
+├── project.godot                  Forward+ renderer; main_scene = main_menu.tscn (v3.7+)
+├── export_presets.cfg             Web preset → ../public/game/index.html
 ├── scenes/
-│   ├── main.tscn                  3D arena, camera, lights, hex grid, runs pilot demo
-│   └── sim_test.tscn              Headless 4 Bengals vs 4 Persians
+│   ├── main_menu.tscn             Entry scene — Single / Host / Join (v3.7.0)
+│   ├── main.tscn                  3D arena, camera, lights, hex grid; loaded by the menu
+│   ├── sim_test.tscn              Headless 4 Bengals vs 4 Persians
+│   └── lobby_test.tscn            Headless multiplayer smoke (loads scripts/lobby_test.gd)
 ├── scripts/
 │   ├── autoload/
 │   │   ├── event_bus.gd           Central signal hub — sim emits, view listens
 │   │   └── audio_manager.gd       12-voice SFX pool, listens to 13 EventBus signals (v3.5.0)
 │   ├── sim/                       PURE LOGIC. No Godot rendering deps.
 │   │   ├── game_data.gd           48 unit defs, 8 synergies, shop odds, combat-unit factory  (autoload: GameData)
-│   │   ├── game_state.gd          gold/health/board/bench/shop/level                          (autoload: GameState)
-│   │   ├── combat_sim.gd          Tick loop, attacks, abilities, status fx, win/loss          (autoload: CombatSim)
+│   │   ├── game_state.gd          gold/health/board/bench/shop/level + mp client handlers    (autoload: GameState)
+│   │   ├── combat_sim.gd          Tick loop, attacks, abilities, seeded RNG, win/loss        (autoload: CombatSim)
 │   │   └── hex.gd                 Hex math (offset coords, 7×8, odd-r) — preload, NO class_name
+│   ├── net/                       Multiplayer (v3.7.0+). Subscribes to EventBus, owns RPCs.
+│   │   ├── network_manager.gd     WebSocketMultiplayerPeer host/join/leave, RPC stubs        (autoload: NetworkManager)
+│   │   ├── lobby.gd               Server-only — 8-slot phase machine, round-robin, combats
+│   │   └── bot_brain.gd           Per-bot themed-faction board synthesizer (seeded RNG)
 │   ├── view/                      3D presentation. Subscribes to EventBus.
 │   │   ├── arena_view.gd          Top-level 3D scene; phases between "shop" and "combat" view modes
 │   │   ├── hex_grid_3d.gd         56 clickable hex tiles, hover/click pick via Camera3D raycast
 │   │   └── unit_view.gd           One unit's 3D presentation: mesh, team disc, HP bar, anims
 │   ├── ui/                        2D Control overlay built programmatically — no .tscn babysitting
-│   │   ├── game_ui.gd             HUD, synergy panel, bench, shop, sell zone, action buttons
+│   │   ├── main_menu.gd           Entry-scene script — picks default URL by OS.has_feature("web")
+│   │   ├── game_ui.gd             HUD, synergy panel, bench, shop, sell zone, lobby roster, banner
 │   │   ├── bench_slot.gd          Drag-source / drop-target Panel (swap on bench-bench drop)
 │   │   ├── sell_zone.gd           Drop target that sells the dragged bench unit
 │   │   └── drop_catcher.gd        Fullscreen drop target — routes drops over the 3D arena to a hex pick
-│   └── sim_test.gd                M1 headless validation
+│   ├── sim_test.gd                M1 headless validation (combat math regression)
+│   └── lobby_test.gd              Multiplayer smoke (16+ rounds in-process, no networking)
 ├── art/
 │   ├── arena/island.glb           Sculpted island (v3.2.0, replaces the old broken arena.glb)
 │   ├── units/                     48 procedural chibi cats (M4, detail pass v3.1.0, anim bake v3.4.1)
@@ -212,6 +259,7 @@ Estimated cost: ~$10–20 for all 48 units.
 | **v3.6.0**   | Single-player polish — win/loss streak gold, themed enemy boards (faction primary + splash), TFT-style stage labels, INCOME + STREAK HUD chips, 3D damage numbers, spectator crowd, bench portraits, in-world star pips, game-over screen with restart | ✅ done |
 | **v3.7.0**   | Multiplayer — WebSocket host/client, 8-slot lobby with bot fill, round-robin pairings, server-authoritative HP/streaks/eliminations, main menu, lobby roster panel, dedicated headless server (`-- --server`) | ✅ done |
 | **v3.7.1**   | MP fixes — deterministic combat seed (server hands client a seed so the cinematic matches the canonical result), HP/streak deferred until local cinematic ends (banner no longer spoiled mid-fight), MP-aware Play Again returns to main menu instead of restarting locally, late joiners taking a dead bot slot get revived with fresh HP/gold, RPC sends gated on `is_peer_reachable` (smoke harness now silent) | ✅ done |
+| **v3.7.1 deploy** | Live at fffa.cat — Caddy `handle /ws` reverse-proxies to `fffa-server.service` (loopback `:7575`); web export at `public/game/`; `network_manager.host_lobby(dedicated=true)` binds to 127.0.0.1; `main_menu` switches default URL by `OS.has_feature("web")`; Host button hidden on web (browsers can't bind sockets) | ✅ done |
 
 ### M6 polish notes
 
@@ -239,7 +287,7 @@ Estimated cost: ~$10–20 for all 48 units.
     - **Round flow.** Server → client: `placement_phase_rpc(round, gold)` resets shop/economy on the client. Client buys/places, clicks READY → `submit_board_rpc(board)`. After everyone submits (or timeout), server pairs alive players via random shuffle (odd count plays a ghost board), runs `CombatSim.run_headless` for each pair, and broadcasts `round_start_rpc(opponent_name, opponent_board, seed)` + `round_result_rpc(won, damage, new_hp)` to each human. Client renders a local cinematic with the supplied opponent board; HP/banner come from the server.
     - **Server-authoritative.** Gold is set by the server at placement; HP, streaks, and damage are computed and broadcast by the server. The client does spend gold locally during placement (no per-purchase RPC) — fine for trusted users; cheat-resistance is a future pass. `combat_sim._end_combat` now early-returns on `is_multiplayer_round` so the local sim never mutates economy.
     - **Lobby roster panel** in `game_ui.gd::_build_roster_panel` — right-edge column of 8 mini-cards, color-coded HP, streak badge, 🤖/👤 prefix, dimmed when eliminated. Hidden in single-player.
-    - **Smoke test** — `scripts/lobby_test.gd` runs the lobby in-process without a network: registers a fake player, submits boards each round, watches the phase machine cycle 16+ rounds to a winner. Use as a CI hook: `godot --headless --path godot4 -s res://scripts/lobby_test.gd`.
+    - **Smoke test** — `scenes/lobby_test.tscn` (was `-s scripts/lobby_test.gd` until v3.7.1, scene-based now so autoloads register before preloads parse) runs the lobby in-process without a network: registers a fake player, submits boards each round, watches the phase machine cycle 16+ rounds to a winner. CI hook: `godot --headless --path godot4 res://scenes/lobby_test.tscn`.
 - **Single-player polish (v3.6.0)** — gameplay-side:
     - **Streak system.** `GameState.win_streak` / `loss_streak` track consecutive results; `get_streak_bonus_gold()` pays 0/0/+1/+1/+2/+2/+3 from streak length 0..6+, applied on top of the per-round base reward and interest. Loss-streaking is now an intentional economic move, not just a defeat.
     - **Themed enemy boards.** `combat_sim.generate_enemy_board` picks a primary faction theme each round (and a secondary splash from round 4); 70% of slots roll within the theme via `GameData.roll_unit_in_faction`, so the AI actually has synergies on its board. Round 1 stays mixed so the very first fight isn't already running a 4-piece bonus.
